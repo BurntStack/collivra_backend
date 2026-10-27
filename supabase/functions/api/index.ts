@@ -1622,7 +1622,8 @@ const campaignSchema = z.object({
   budgetMax: z.number().int().positive('budgetMax must be positive'),
   applyBy: z.string().trim().min(1, 'applyBy date is required'),
   brief: z.string().trim().optional(),
-}).refine((d) => d.budgetMax >= d.budgetMin, { message: 'budgetMax must be greater than or equal to budgetMin' })
+  status: z.enum(['draft', 'open_for_bids']).optional(),
+}).refine((d) => d.budgetMax > d.budgetMin, { message: 'budgetMax must be greater than budgetMin' })
 
 app.post('/campaigns', async (c) => {
   const me = await requireUser(c)
@@ -1632,7 +1633,7 @@ app.post('/campaigns', async (c) => {
 
   const parsed = campaignSchema.safeParse(await readJson(c))
   if (!parsed.success) return validationError(c, parsed.error)
-  const { title, platform, deliverables, budgetMin, budgetMax, applyBy, brief } = parsed.data
+  const { title, platform, deliverables, budgetMin, budgetMax, applyBy, brief, status } = parsed.data
 
   const { data: campaign, error } = await admin.from('campaigns').insert({
     brand_id: me.id,
@@ -1643,7 +1644,7 @@ app.post('/campaigns', async (c) => {
     budget_max: budgetMax,
     apply_by: applyBy,
     brief: brief ?? null,
-    status: 'open_for_bids',
+    status: status ?? 'open_for_bids',
   }).select().single()
 
   if (error) throw error
@@ -1687,6 +1688,7 @@ app.get('/campaigns', async (c) => {
       )
     `)
     .eq('brand_id', me.id)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   if (error) throw error
@@ -1726,6 +1728,7 @@ app.get('/campaigns/:id', async (c) => {
   const { data: camp, error } = await admin.from('campaigns')
     .select('*')
     .eq('id', id)
+    .is('deleted_at', null)
     .single()
 
   if (error || !camp) {
@@ -1753,7 +1756,72 @@ app.patch('/campaigns/:id', async (c) => {
   }
 
   const id = c.req.param('id')
+  const { data: camp, error: fetchErr } = await admin.from('campaigns')
+    .select('*')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .single()
+
+  // Owner only: 404 for anyone else or if not found
+  if (fetchErr || !camp || camp.brand_id !== me.id) {
+    return c.json({ error: { code: 'campaign_not_found', message: 'Campaign not found' } }, 404)
+  }
+
+  // closed and awarded campaigns cannot be edited
+  if (camp.status === 'closed' || camp.status === 'awarded' || camp.status === 'cancelled') {
+    return c.json({ error: { code: 'conflict', message: `Campaigns with status '${camp.status}' cannot be edited` } }, 409)
+  }
+
   const body = await readJson(c)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return c.json({ error: { code: 'bad_request', message: 'Invalid JSON body' } }, 400)
+  }
+
+  // Whitelist editable fields (title, platform, deliverables, budgetMin, budgetMax, applyBy, brief)
+  const allowedFields = new Set(['title', 'platform', 'deliverables', 'budgetMin', 'budgetMax', 'applyBy', 'brief'])
+  const bodyKeys = Object.keys(body)
+  const unknownKeys = bodyKeys.filter((k) => !allowedFields.has(k))
+  if (unknownKeys.length > 0) {
+    return c.json({ error: { code: 'unprocessable_entity', message: `Unknown or uneditable fields: ${unknownKeys.join(', ')}` } }, 422)
+  }
+
+  // Check if bids exist on campaign
+  const { count: bidCount } = await admin
+    .from('campaign_bids')
+    .select('*', { count: 'exact', head: true })
+    .eq('campaign_id', id)
+
+  if ((bidCount ?? 0) > 0) {
+    if (body.budgetMin !== undefined || body.budgetMax !== undefined || body.deliverables !== undefined || body.applyBy !== undefined) {
+      return c.json({
+        error: {
+          code: 'conflict',
+          message: 'Campaign has bids; budgetMin, budgetMax, deliverables, and applyBy are locked',
+        },
+      }, 409)
+    }
+  }
+
+  // Validate budgetMin < budgetMax
+  if (body.budgetMin !== undefined && (!Number.isInteger(body.budgetMin) || body.budgetMin < 0)) {
+    return c.json({ error: { code: 'unprocessable_entity', message: 'budgetMin must be a non-negative integer' } }, 422)
+  }
+  if (body.budgetMax !== undefined && (!Number.isInteger(body.budgetMax) || body.budgetMax <= 0)) {
+    return c.json({ error: { code: 'unprocessable_entity', message: 'budgetMax must be a positive integer' } }, 422)
+  }
+  const effectiveMin = body.budgetMin !== undefined ? body.budgetMin : camp.budget_min
+  const effectiveMax = body.budgetMax !== undefined ? body.budgetMax : camp.budget_max
+  if (effectiveMin >= effectiveMax) {
+    return c.json({ error: { code: 'unprocessable_entity', message: 'budgetMin must be less than budgetMax' } }, 422)
+  }
+
+  // Validate applyBy date is not in the past
+  if (body.applyBy !== undefined) {
+    const applyDate = new Date(body.applyBy)
+    if (isNaN(applyDate.getTime()) || applyDate.getTime() < Date.now()) {
+      return c.json({ error: { code: 'unprocessable_entity', message: 'applyBy date cannot be in the past' } }, 422)
+    }
+  }
 
   const updates: Record<string, any> = {}
   if (body.title !== undefined) updates.title = body.title
@@ -1763,18 +1831,16 @@ app.patch('/campaigns/:id', async (c) => {
   if (body.budgetMax !== undefined) updates.budget_max = body.budgetMax
   if (body.applyBy !== undefined) updates.apply_by = body.applyBy
   if (body.brief !== undefined) updates.brief = body.brief
-  if (body.status !== undefined) updates.status = body.status
   updates.updated_at = new Date().toISOString()
 
   const { data: updated, error } = await admin.from('campaigns')
     .update(updates)
     .eq('id', id)
-    .eq('brand_id', me.id)
     .select()
     .single()
 
   if (error || !updated) {
-    return c.json({ error: { code: 'campaign_not_found', message: 'Campaign not found or unauthorized' } }, 404)
+    return c.json({ error: { code: 'campaign_not_found', message: 'Campaign not found' } }, 404)
   }
 
   return c.json({
@@ -1798,10 +1864,43 @@ app.delete('/campaigns/:id', async (c) => {
   }
 
   const id = c.req.param('id')
-  const { error } = await admin.from('campaigns')
-    .delete()
+  const { data: camp, error: fetchErr } = await admin.from('campaigns')
+    .select('*')
     .eq('id', id)
-    .eq('brand_id', me.id)
+    .is('deleted_at', null)
+    .single()
+
+  // Owner only: 404 for anyone else or if not found
+  if (fetchErr || !camp || camp.brand_id !== me.id) {
+    return c.json({ error: { code: 'campaign_not_found', message: 'Campaign not found' } }, 404)
+  }
+
+  // Delete allowed only for drafts, or campaigns with no bids and no orders
+  if (camp.status !== 'draft') {
+    const { count: bidCount } = await admin
+      .from('campaign_bids')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', id)
+
+    const { count: orderCount } = await admin
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('campaign_id', id)
+
+    if ((bidCount ?? 0) > 0 || (orderCount ?? 0) > 0) {
+      return c.json({
+        error: {
+          code: 'conflict',
+          message: 'Campaign has existing bids or orders and cannot be deleted unless in draft status',
+        },
+      }, 409)
+    }
+  }
+
+  // Soft delete with deleted_at
+  const { error } = await admin.from('campaigns')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
 
   if (error) throw error
 
@@ -1815,6 +1914,16 @@ app.get('/campaigns/:id/bids', async (c) => {
   }
 
   const campaignId = c.req.param('id')
+  const { data: camp } = await admin.from('campaigns')
+    .select('id, brand_id')
+    .eq('id', campaignId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!camp) {
+    return c.json({ error: { code: 'campaign_not_found', message: 'Campaign not found' } }, 404)
+  }
+
   const { data: bids, error } = await admin.from('campaign_bids')
     .select(`
       id,
@@ -1853,6 +1962,19 @@ const submitBidSchema = z.object({
 
 app.post('/campaigns/:id/bids', async (c) => {
   const campaignId = c.req.param('id')
+  const { data: camp } = await admin.from('campaigns')
+    .select('id, status')
+    .eq('id', campaignId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!camp) {
+    return c.json({ error: { code: 'campaign_not_found', message: 'Campaign not found' } }, 404)
+  }
+  if (camp.status !== 'open_for_bids') {
+    return c.json({ error: { code: 'conflict', message: 'Campaign is not open for bids' } }, 409)
+  }
+
   const parsed = submitBidSchema.safeParse(await readJson(c))
   if (!parsed.success) return validationError(c, parsed.error)
   const { creatorId, price, note } = parsed.data
@@ -1884,6 +2006,7 @@ app.post('/campaigns/:id/bids/:bidId/select', async (c) => {
     .select('*')
     .eq('id', campaignId)
     .eq('brand_id', me.id)
+    .is('deleted_at', null)
     .single()
 
   if (campErr || !campaign) {
@@ -2409,6 +2532,7 @@ app.get('/dashboard/summary', async (c) => {
     .from('campaigns')
     .select('id, status')
     .eq('brand_id', me.id)
+    .is('deleted_at', null)
 
   const totalOrders = orders?.length ?? 0
   const escrowSum = (orders ?? [])
