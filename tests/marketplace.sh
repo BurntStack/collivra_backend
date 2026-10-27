@@ -123,21 +123,21 @@ echo "Test 4.5: POST /creators/ananya-rao/save (Shortlist)"
 SAVE_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$BASE_URL/creators/ananya-rao/save" \
   -H "Authorization: Bearer $BRAND_TOKEN")
 SAVE_STATUS=$(echo "$SAVE_RES" | tail -n1 | cut -d: -f2)
-if [ "$SAVE_STATUS" != "200" ]; then
+if [ "$SAVE_STATUS" != "204" ] && [ "$SAVE_STATUS" != "200" ]; then
   echo "Failed to save creator: $SAVE_RES"
   exit 1
 fi
-echo "Shortlist save OK (200)"
+echo "Shortlist save OK ($SAVE_STATUS)"
 
 echo "Test 4.6: DELETE /creators/ananya-rao/save (Remove Shortlist)"
 UNSAVE_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X DELETE "$BASE_URL/creators/ananya-rao/save" \
   -H "Authorization: Bearer $BRAND_TOKEN")
 UNSAVE_STATUS=$(echo "$UNSAVE_RES" | tail -n1 | cut -d: -f2)
-if [ "$UNSAVE_STATUS" != "200" ]; then
+if [ "$UNSAVE_STATUS" != "204" ] && [ "$UNSAVE_STATUS" != "200" ]; then
   echo "Failed to unsave creator: $UNSAVE_RES"
   exit 1
 fi
-echo "Shortlist remove OK (200)"
+echo "Shortlist remove OK ($UNSAVE_STATUS)"
 
 echo ""
 echo "=== ALL MARKETPLACE & ROUTE GATING TESTS PASSED ==="

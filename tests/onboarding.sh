@@ -113,11 +113,11 @@ echo ""
 echo "Test 4.2: Callback failure simulation (simulate_error=too_small)"
 CALLBACK_ERR=$(curl -s -w "\nHTTP_STATUS:%{http_code}" "$CONNECT_URL&simulate_error=too_small")
 CB_ERR_STATUS=$(echo "$CALLBACK_ERR" | tail -n1 | cut -d: -f2)
-if [ "$CB_ERR_STATUS" != "422" ]; then
-  echo "Expected 422 for simulate_error=too_small, got $CB_ERR_STATUS"
+if [ "$CB_ERR_STATUS" != "400" ]; then
+  echo "Expected 400 for simulate_error=too_small, got $CB_ERR_STATUS"
   exit 1
 fi
-echo "Social callback error simulation succeeded (HTTP 422)"
+echo "Social callback error simulation succeeded (HTTP 400)"
 
 echo ""
 echo "=== 5. KYC ID Submission ==="

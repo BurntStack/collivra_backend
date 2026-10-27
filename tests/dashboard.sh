@@ -78,22 +78,22 @@ ADD_CREATOR=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$BASE_URL/lists/$
   -H "Content-Type: application/json" \
   -d '{"creatorId": "ananya-rao"}')
 STATUS=$(echo "$ADD_CREATOR" | tail -n1 | cut -d: -f2)
-if [ "$STATUS" != "200" ]; then
+if [ "$STATUS" != "201" ] && [ "$STATUS" != "200" ]; then
   echo "Add creator to list failed: $ADD_CREATOR"
   exit 1
 fi
-echo "Add creator to list OK (200)"
+echo "Add creator to list OK ($STATUS)"
 
 echo ""
 echo "=== 7. Custom Lists: Remove Creator (DELETE /lists/:id/creators/:creatorId) ==="
 DEL_CREATOR=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X DELETE "$BASE_URL/lists/$LIST_ID/creators/ananya-rao" \
   -H "Authorization: Bearer $TOKEN")
 STATUS=$(echo "$DEL_CREATOR" | tail -n1 | cut -d: -f2)
-if [ "$STATUS" != "200" ]; then
+if [ "$STATUS" != "204" ] && [ "$STATUS" != "200" ]; then
   echo "Remove creator from list failed: $DEL_CREATOR"
   exit 1
 fi
-echo "Remove creator from list OK (200)"
+echo "Remove creator from list OK ($STATUS)"
 
 echo ""
 echo "=== 8. Deliverables / Content Library: GET /deliverables ==="

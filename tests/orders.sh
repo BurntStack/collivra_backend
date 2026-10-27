@@ -83,7 +83,7 @@ echo "=== 6. Request Changes (POST /orders/:id/request-changes) ==="
 CHANGES_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$BASE_URL/orders/$ORDER_ID/request-changes" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"notes":"Please increase audio volume on the voiceover"}')
+  -d '{"note":"Please increase audio volume on the voiceover"}')
 STATUS=$(echo "$CHANGES_RES" | tail -n1 | cut -d: -f2)
 BODY=$(echo "$CHANGES_RES" | sed '$d')
 if [ "$STATUS" != "200" ]; then
