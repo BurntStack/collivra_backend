@@ -75,11 +75,11 @@ echo "=== 6. Test DELETE /cart/items/:itemId (Remove item) ==="
 DELETE_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X DELETE "$BASE_URL/cart/items/$ITEM_ID" \
   -H "Authorization: Bearer $TOKEN")
 STATUS=$(echo "$DELETE_RES" | tail -n1 | cut -d: -f2)
-if [ "$STATUS" != "204" ] && [ "$STATUS" != "200" ]; then
+if [ "$STATUS" != "204" ]; then
   echo "DELETE /cart/items/:id failed: $DELETE_RES"
   exit 1
 fi
-echo "Delete cart item OK ($STATUS)"
+echo "Delete cart item OK (204)"
 
 echo ""
 echo "=== 7. Test POST /offers (Send Custom Offer) ==="
