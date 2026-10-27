@@ -609,63 +609,95 @@ app.post('/auth/logout', async (c) => {
 })
 
 app.post('/auth/oauth/google', async (c) => {
-  const email = 'brand.google@collivra.app'
-  const { data: existing } = await admin.from('profiles').select('*').eq('email', email).limit(1)
-  let userId: string
-  if (!existing?.length) {
-    const { data: created } = await admin.auth.admin.createUser({
-      email,
-      password: crypto.randomUUID(),
-      email_confirm: true,
-      user_metadata: { role: 'brand', name: 'Google Brand User', company_name: 'Brand Co' },
-    })
-    userId = created.user!.id
-    await admin.from('profiles').update({ status: 'active', company_name: 'Brand Co' }).eq('id', userId)
-  } else {
-    userId = existing[0].id
+  const body = await readJson(c).catch(() => ({}))
+  const { idToken, nonce } = body ?? {}
+
+  if (!idToken || typeof idToken !== 'string') {
+    return c.json({ error: { code: 'invalid_token', message: 'idToken is required' } }, 401)
   }
-  const session = await createSession(userId)
-  const token = session.access_token
+
+  let session: any = null
+  let authUser: any = null
+
+  // In production or when valid token provided, call signInWithIdToken
+  const { data, error } = await anon.auth.signInWithIdToken({
+    provider: 'google',
+    token: idToken,
+    nonce,
+  })
+
+  if (error || !data.session || !data.user) {
+    // In DEV_MODE with test tokens, allow simulated token exchange for tests
+    if (Deno.env.get('DEV_MODE') === 'true' && idToken.startsWith('test_')) {
+      const email = 'brand.google@collivra.app'
+      const { data: existing } = await admin.from('profiles').select('*').eq('email', email).limit(1)
+      let userId: string
+      if (!existing?.length) {
+        const { data: created } = await admin.auth.admin.createUser({
+          email,
+          password: crypto.randomUUID(),
+          email_confirm: true,
+          user_metadata: { role: 'brand', name: 'Google Brand User', company_name: 'Brand Co' },
+        })
+        userId = created.user!.id
+        await admin.from('profiles').update({ status: 'active', company_name: 'Brand Co' }).eq('id', userId)
+      } else {
+        userId = existing[0].id
+      }
+      session = await createSession(userId)
+      authUser = { id: userId, email }
+    } else {
+      return c.json({ error: { code: 'invalid_token', message: error?.message || 'Google sign-in token invalid or expired' } }, 401)
+    }
+  } else {
+    session = data.session
+    authUser = data.user
+  }
+
+  // Ensure role is brand
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('id, role, status, name, company_name')
+    .eq('id', authUser.id)
+    .single()
+
+  if (!profile) {
+    return c.json({ error: { code: 'invalid_token', message: 'User profile not found' } }, 401)
+  }
+
+  if (profile.role !== 'brand') {
+    await admin.auth.admin.signOut(session.access_token)
+    return c.json({ error: { code: 'wrong_role', message: 'Access forbidden: this account is not registered as a brand' } }, 403)
+  }
+
+  // Ensure brand_profiles row exists
+  await admin.from('brand_profiles').upsert({
+    user_id: profile.id,
+    company_name: profile.company_name ?? null,
+  }, { onConflict: 'user_id' })
+
   return c.json({
-    token,
+    token: session.access_token,
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    expiresIn: session.expires_in,
     user: {
-      id: userId,
-      name: 'Google Brand User',
-      email,
-      companyName: 'Brand Co',
+      id: profile.id,
+      name: profile.name,
+      email: authUser.email,
+      companyName: profile.company_name,
       role: 'brand',
     },
+    status: profile.status,
+    next: nextStep(profile.status),
   })
 })
 
 app.post('/auth/oauth/apple', async (c) => {
-  const email = 'brand.apple@collivra.app'
-  const { data: existing } = await admin.from('profiles').select('*').eq('email', email).limit(1)
-  let userId: string
-  if (!existing?.length) {
-    const { data: created } = await admin.auth.admin.createUser({
-      email,
-      password: crypto.randomUUID(),
-      email_confirm: true,
-      user_metadata: { role: 'brand', name: 'Apple Brand User', company_name: 'Brand Co' },
-    })
-    userId = created.user!.id
-    await admin.from('profiles').update({ status: 'active', company_name: 'Brand Co' }).eq('id', userId)
-  } else {
-    userId = existing[0].id
+  if (Deno.env.get('OAUTH_APPLE_ENABLED') !== 'true') {
+    return c.json({ error: { code: 'not_implemented', message: 'Apple sign-in is not enabled' } }, 501)
   }
-  const session = await createSession(userId)
-  const token = session.access_token
-  return c.json({
-    token,
-    user: {
-      id: userId,
-      name: 'Apple Brand User',
-      email,
-      companyName: 'Brand Co',
-      role: 'brand',
-    },
-  })
+  return c.json({ error: { code: 'not_implemented', message: 'Apple sign-in is not enabled' } }, 501)
 })
 
 // ---------- file uploads (spec pages 16-17) ----------
