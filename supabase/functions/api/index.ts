@@ -72,6 +72,7 @@ async function createSession(userId: string) {
 // ---------- routes ----------
 app.get('/health', (c) => c.json({ ok: true, time: new Date().toISOString() }))
 
+
 const signupSchema = z.object({
   role: z.enum(['brand', 'creator']),
   name: z.string().trim().min(2, 'Enter your name').max(100),
@@ -186,6 +187,131 @@ app.post('/auth/otp/verify', async (c) => {
     role: profile.role,
     status: profile.status,
     next: nextStep(profile.status),
+  })
+})
+
+// ---------- login, me, refresh ----------
+const MAX_FAILED_LOGINS = 5
+const LOCK_MINUTES = 15
+
+const loginSchema = z.object({
+  identifier: z.string().trim().min(3, 'Enter your mobile number or email'),
+  password: z.string().min(1, 'Enter your password'),
+  role: z.enum(['brand', 'creator']).optional(), // only needed if one number has both roles
+})
+
+async function findProfiles(identifier: string, role?: string) {
+  let q = admin.from('profiles')
+    .select('id, role, status, mobile_verified_at, failed_logins, locked_until')
+  if (identifier.includes('@')) {
+    q = q.eq('email', identifier.toLowerCase())
+  } else {
+    const mobile = normalizeMobile(identifier)
+    if (!mobile) return []
+    q = q.eq('mobile', mobile)
+  }
+  if (role) q = q.eq('role', role)
+  const { data } = await q
+  return data ?? []
+}
+
+app.post('/auth/login', async (c) => {
+  const parsed = loginSchema.safeParse(await readJson(c))
+  if (!parsed.success) return validationError(c, parsed.error)
+  const { identifier, password, role } = parsed.data
+
+  const wrong = () =>
+    c.json({ message: 'Wrong mobile/email or password', code: 'invalid_credentials' }, 401)
+  const locked = (until: string) =>
+    c.json({ message: `Too many wrong attempts. Try again in ${LOCK_MINUTES} minutes.`,
+             code: 'account_locked', lockedUntil: until }, 423)
+
+  const profiles = await findProfiles(identifier, role)
+  if (!profiles.length) return wrong()
+  if (profiles.length > 1) {
+    return c.json({ message: 'Choose brand or creator to continue', code: 'role_required' }, 409)
+  }
+  const p = profiles[0]
+
+  if (p.locked_until && new Date(p.locked_until) > new Date()) return locked(p.locked_until)
+
+  const { data: u } = await admin.auth.admin.getUserById(p.id)
+  const { data, error } = await anon.auth.signInWithPassword({
+    email: u.user!.email!, password,
+  })
+
+  if (error || !data.session) {
+    if (error?.status === 429) {
+      return c.json({ message: 'Too many attempts. Please wait a moment.', code: 'rate_limited' }, 429)
+    }
+    const failed = p.failed_logins + 1
+    if (failed >= MAX_FAILED_LOGINS) {
+      const until = new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString()
+      await admin.from('profiles').update({ failed_logins: 0, locked_until: until }).eq('id', p.id)
+      return locked(until)
+    }
+    await admin.from('profiles').update({ failed_logins: failed }).eq('id', p.id)
+    return wrong()
+  }
+
+  const session = data.session
+  if (p.failed_logins || p.locked_until) {
+    await admin.from('profiles').update({ failed_logins: 0, locked_until: null }).eq('id', p.id)
+  }
+
+  // Status checks happen only after password is verified — prevents account existence probing.
+  if (p.status === 'suspended' || p.status === 'banned') {
+    await admin.auth.admin.signOut(session.access_token)
+    return c.json({ message: `Your account is ${p.status}`, code: 'account_blocked' }, 403)
+  }
+  if (!p.mobile_verified_at) {
+    await admin.auth.admin.signOut(session.access_token)
+    return c.json({ message: 'Please verify your mobile number first', code: 'mobile_not_verified' }, 403)
+  }
+
+  return c.json({
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    expiresIn: session.expires_in,
+    role: p.role,
+    status: p.status,
+    next: nextStep(p.status),
+  })
+})
+
+// Reusable: reads the Bearer token and returns the caller's profile, or null.
+async function requireUser(c: Context) {
+  const header = c.req.header('Authorization') ?? ''
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+  if (!token) return null
+  // admin.auth.getUser(jwt) validates the token server-side against Supabase Auth.
+  const { data, error } = await admin.auth.getUser(token)
+  if (error || !data?.user?.id) return null
+  const { data: profile } = await admin.from('profiles')
+    .select('id, role, status, name, mobile').eq('id', data.user.id).single()
+  return profile ?? null
+}
+
+app.get('/auth/me', async (c) => {
+  const me = await requireUser(c)
+  if (!me) return c.json({ message: 'Please sign in again', code: 'unauthorized' }, 401)
+  if (me.status === 'suspended' || me.status === 'banned') {
+    return c.json({ message: `Your account is ${me.status}`, code: 'account_blocked' }, 403)
+  }
+  return c.json({ id: me.id, role: me.role, status: me.status, name: me.name, mobile: me.mobile })
+})
+
+app.post('/auth/refresh', async (c) => {
+  const parsed = z.object({ refreshToken: z.string().min(1) }).safeParse(await readJson(c))
+  if (!parsed.success) return validationError(c, parsed.error)
+  const { data, error } = await anon.auth.refreshSession({ refresh_token: parsed.data.refreshToken })
+  if (error || !data.session) {
+    return c.json({ message: 'Please sign in again', code: 'unauthorized' }, 401)
+  }
+  return c.json({
+    accessToken: data.session.access_token,
+    refreshToken: data.session.refresh_token,
+    expiresIn: data.session.expires_in,
   })
 })
 
