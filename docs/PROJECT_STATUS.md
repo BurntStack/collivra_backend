@@ -24,9 +24,9 @@ The entire backend runs on **Supabase** (a managed Postgres database with built-
 | `POST /auth/otp/send` | ✅ Live & tested | Resends OTP; silent success for unknown numbers |
 | `POST /auth/otp/verify` | ✅ Live & tested | Checks OTP → returns `accessToken`, `refreshToken`, `next` step |
 | `GET /health` | ✅ Live & tested | Liveness check |
-| `POST /auth/login` | 🔲 Not started | Password + OTP-based login |
-| `GET /auth/me` | 🔲 Not started | Returns the logged-in user's profile |
-| `POST /auth/refresh` | 🔲 Not started | Exchanges refresh token for a new session |
+| `POST /auth/login` | ✅ Live & tested | Password auth with 5-attempt lockout (15 min); returns tokens directly |
+| `GET /auth/me` | ✅ Live & tested | Returns profile from Bearer token |
+| `POST /auth/refresh` | ✅ Live & tested | Rotates refresh token, returns new token pair |
 | Profiles (read/edit) | 🔲 Not started | Creator and brand profile endpoints |
 | Campaigns / Jobs | 🔲 Not started | Brand-side posting endpoints |
 | Bids | 🔲 Not started | Creator-side application/bid endpoints |
@@ -78,7 +78,8 @@ collivra/
 │   ├── config.toml                  # Supabase project settings (local ports, function options)
 │   ├── migrations/                  # SQL files that build the database schema in order
 │   │   ├── 20261027051046_foundation.sql     # Profiles, settings, audit log, RLS, trigger
-│   │   └── 20261027053217_otp_support.sql    # OTP rate-limit table + mobile_verified_at column
+│   │   ├── 20261027053217_otp_support.sql    # OTP rate-limit table + mobile_verified_at column
+│   │   └── 20261027055741_login_lockout.sql     # failed_logins + locked_until columns
 │   ├── functions/
 │   │   └── api/
 │   │       ├── index.ts             # All /api/v1 routes (the main Edge Function file)
@@ -243,9 +244,9 @@ Verify the OTP and get session tokens. No auth required.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/auth/login` | Sign in with mobile + password, triggers OTP |
-| `GET` | `/auth/me` | Get current user's profile |
-| `POST` | `/auth/refresh` | Exchange refresh token for new access token |
+| `POST` | `/auth/password/reset-request` | Send OTP to reset password |
+| `POST` | `/auth/password/reset` | Verify OTP and set new password |
+| `PATCH` | `/auth/me` | Update own profile (name, email, language) |
 
 ---
 
@@ -261,10 +262,12 @@ One row per user account. Created automatically when Supabase Auth creates a use
 | `id` | UUID | Matches the Supabase Auth user ID |
 | `role` | text | `brand` or `creator` — set at signup, cannot be changed by the user |
 | `status` | text | `unverified` → `needs_info` → `active` (or `suspended`/`banned`) |
-| `full_name` | text | Display name |
+| `name` | text | Display name |
 | `mobile` | text | E.164 format (e.g. `+919876543210`) |
 | `email` | text | Optional; null if the user signed up with mobile only |
 | `mobile_verified_at` | timestamp | When the user first verified their OTP; null until then |
+| `failed_logins` | int | Count of consecutive wrong password attempts (reset on success) |
+| `locked_until` | timestamp | Account is locked until this time after 5 wrong attempts; null otherwise |
 | `terms_accepted_at` | timestamp | When the user accepted the terms |
 | `terms_version` | text | Which version of the terms they accepted |
 | `created_at` | timestamp | When the account was created |
@@ -337,15 +340,16 @@ Records every OTP send attempt. Used to enforce the 5-sends-per-hour limit per n
 | One mobile number for both brand and creator | The spec allows it. OTP login cannot tell which role is intended, so we return a `role_required` 409 and ask for a `role` field. Frontend needs to handle this. Is the spec correct, or should one number be one role? | Frontend lead + product |
 | Twilio India DLT registration | Twilio requires DLT (Distributed Ledger Technology) registration to send SMS to Indian numbers commercially. Trial accounts can only send to numbers you have verified in the Twilio console. Who is handling this? | Business / legal team |
 | GitHub repository location | The repo needs a permanent home (GitHub org, visibility). | Project lead |
+| `mobile_not_verified` UX on login | If a user signs up but never verifies, `/auth/login` returns `403 mobile_not_verified`. The spec doesn't cover this case. Frontend should redirect to the OTP screen. Needs team alignment. | Frontend lead |
 
 ---
 
 ## 10. Next steps
 
-1. **`POST /auth/login`** — takes `mobile` + `password`, verifies credentials against Supabase Auth, then sends OTP. Returns same `201` shape as signup.
-2. **`GET /auth/me`** — reads the JWT from `Authorization: Bearer`, looks up the profile, returns it. First protected endpoint.
-3. **`POST /auth/refresh`** — exchanges a `refreshToken` for a new `accessToken` + `refreshToken` pair.
-4. **Profile endpoints** — `GET /profiles/:id`, `PATCH /profiles/me` for creators and brands.
+1. **Password reset flow** — `POST /auth/password/reset-request` (sends OTP), `POST /auth/password/reset` (verifies OTP + sets new password). Finishes the full auth surface before moving to profile pages.
+2. **Creator onboarding** — `PATCH /auth/me` or `POST /onboarding/creator` — sets bio, categories, rate. Moves status `unverified` → `needs_info` → `active`.
+3. **Brand onboarding** — same pattern for brand profile.
+4. **Profile endpoints** — `GET /profiles/:id` (public read), `PATCH /profiles/me` for self-edit.
 5. **Remove dev secrets before any public/staging deployment** — `supabase secrets unset DEV_MODE DEV_OTP_CODE DEV_TEST_NUMBERS`.
 
 ---
@@ -354,6 +358,9 @@ Records every OTP send attempt. Used to enforce the 5-sends-per-hour limit per n
 
 | Date | What changed | Why it matters |
 |---|---|---|
+| 2026-10-27 | **`POST /auth/login`, `GET /auth/me`, `POST /auth/refresh` deployed and tested.** Login returns tokens directly (no OTP step). Me returns `id, role, status, name, mobile`. Refresh rotates the token. | Frontend can now build the full login and session management flow. |
+| 2026-10-27 | **Migration `login_lockout` pushed.** Adds `failed_logins` and `locked_until` to `profiles`. Five wrong attempts lock the account for 15 minutes. | Protects accounts from brute-force attacks per spec. |
+| 2026-10-27 | **Bug fixed: `full_name` → `name`.** The profiles table column is `name` (set in foundation migration). `full_name` was a typo in the code and this doc. | `/auth/me` was returning 401 because the profile query silently returned null. |
 | 2026-10-27 | **`POST /auth/signup`, `POST /auth/otp/send`, `POST /auth/otp/verify` deployed and tested.** Signup returns `201` with `userId`; verify returns `accessToken`, `refreshToken`, `role`, `status`, `next`. | Frontend can now build the signup and OTP screens against real endpoints. |
 | 2026-10-27 | **`otpService.ts` added.** Twilio Verify integration with dev-mode bypass for whitelisted test numbers. | No SMS credentials needed to develop and test locally. |
 | 2026-10-27 | **Migration `otp_support` pushed.** Adds `mobile_verified_at` to `profiles` and creates `otp_send_log`. | Enables OTP rate limiting (5/hour) and tracks when a number was first verified. |
