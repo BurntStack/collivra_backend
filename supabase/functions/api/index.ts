@@ -394,6 +394,20 @@ async function requireRole(c: Context, role: 'creator' | 'brand') {
   return { error: null, user: me }
 }
 
+async function requireBrandOrAdmin(c: Context) {
+  const me = await requireUser(c)
+  if (!me) {
+    return { error: c.json({ message: 'Please sign in again', code: 'unauthorized', error: { code: 'unauthorized', message: 'Please sign in' } }, 401), user: null }
+  }
+  if (me.status === 'suspended' || me.status === 'banned') {
+    return { error: c.json({ message: `Your account is ${me.status}`, code: 'account_blocked', error: { code: 'account_blocked', message: `Your account is ${me.status}` } }, 403), user: null }
+  }
+  if (me.role !== 'brand' && me.role !== 'admin' && me.role !== 'super_admin') {
+    return { error: c.json({ message: 'Access forbidden for this account role', code: 'forbidden', error: { code: 'forbidden', message: 'Access forbidden' } }, 403), user: null }
+  }
+  return { error: null, user: me }
+}
+
 app.get('/auth/me', async (c) => {
   const me = await requireUser(c)
   if (!me) return c.json({ message: 'Please sign in again', code: 'unauthorized', error: { code: 'unauthorized', message: 'Please sign in again' } }, 401)
@@ -1222,6 +1236,9 @@ app.get('/creators', async (c) => {
 })
 
 app.get('/creators/:id', async (c) => {
+  const auth = await requireBrandOrAdmin(c)
+  if (auth.error) return auth.error
+
   const id = c.req.param('id')
   const { data: creator, error } = await admin.from('creators').select('*').eq('id', id).single()
   if (error || !creator) {
@@ -1238,6 +1255,9 @@ app.get('/creators/:id', async (c) => {
 })
 
 app.get('/creators/:id/packages', async (c) => {
+  const auth = await requireBrandOrAdmin(c)
+  if (auth.error) return auth.error
+
   const id = c.req.param('id')
   const { data, error } = await admin.from('creator_packages').select('*').eq('creator_id', id).order('price', { ascending: true })
   if (error) throw error
@@ -1253,6 +1273,9 @@ app.get('/creators/:id/packages', async (c) => {
 })
 
 app.get('/creators/:id/reviews', async (c) => {
+  const auth = await requireBrandOrAdmin(c)
+  if (auth.error) return auth.error
+
   const id = c.req.param('id')
   const page = Math.max(1, parseInt(c.req.query('page') || '1', 10))
   const pageSize = Math.max(1, parseInt(c.req.query('pageSize') || '10', 10))
@@ -1291,6 +1314,9 @@ app.get('/creators/:id/reviews', async (c) => {
 })
 
 app.get('/creators/:id/similar', async (c) => {
+  const auth = await requireBrandOrAdmin(c)
+  if (auth.error) return auth.error
+
   const id = c.req.param('id')
   const { data: current } = await admin.from('creators').select('category, platform').eq('id', id).single()
 
@@ -1329,10 +1355,10 @@ app.get('/creators/:id/similar', async (c) => {
 })
 
 app.post('/creators/:id/save', async (c) => {
-  const me = await requireUser(c)
-  if (!me) {
-    return c.json({ error: { code: 'unauthorized', message: 'Please sign in to save creators' } }, 401)
-  }
+  const auth = await requireBrandOrAdmin(c)
+  if (auth.error) return auth.error
+  const me = auth.user!
+
   const creatorId = c.req.param('id')
   const { error } = await admin.from('saved_creators').upsert({
     user_id: me.id,
@@ -1344,10 +1370,10 @@ app.post('/creators/:id/save', async (c) => {
 })
 
 app.delete('/creators/:id/save', async (c) => {
-  const me = await requireUser(c)
-  if (!me) {
-    return c.json({ error: { code: 'unauthorized', message: 'Please sign in to save creators' } }, 401)
-  }
+  const auth = await requireBrandOrAdmin(c)
+  if (auth.error) return auth.error
+  const me = auth.user!
+
   const creatorId = c.req.param('id')
   const { error } = await admin.from('saved_creators').delete()
     .eq('user_id', me.id)
