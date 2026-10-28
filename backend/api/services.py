@@ -137,6 +137,9 @@ def send_email_otp(email, otp_code):
         except Exception:
             pass
 
+    # Print to server console for local testing
+    print(f"\n[EMAIL OTP DELIVERY] Destination: {email}")
+    print(f"[EMAIL OTP DELIVERY] Your 6-digit Code is: {otp_code} (Expires in 10 minutes)\n")
     return True
 
 def generate_and_store_email_otp(email, role='brand'):
