@@ -118,27 +118,31 @@ def compute_email_otp_hash(email, otp_code):
     salt = getattr(settings, 'SECRET_KEY', 'default_secret')[:16]
     return hashlib.sha256(f"{email.lower().strip()}:{str(otp_code).strip()}:{salt}".encode('utf-8')).hexdigest()
 
+def _dispatch_email(email, otp_code):
+    try:
+        from django.core.mail import send_mail
+        send_mail(
+            subject='Your Collivra Verification Code',
+            message=f'Your verification code is: {otp_code}. It is valid for 10 minutes.',
+            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@collivra.app'),
+            recipient_list=[email],
+            fail_silently=False,
+        )
+        print(f"[EMAIL OTP DISPATCH] Real email sent to {email}")
+    except Exception as e:
+        print(f"[EMAIL OTP DISPATCH ERROR] Failed to send email to {email}: {e}")
+
 def send_email_otp(email, otp_code):
     """
     Sends an email OTP via SMTP or Supabase Auth.
-    In dev mode or if SMTP is not configured, logs delivery safely.
+    Dispatches in background thread so HTTP responses never hang or time out.
     """
+    import threading
     if getattr(settings, 'EMAIL_HOST', None):
-        try:
-            from django.core.mail import send_mail
-            send_mail(
-                subject='Your Collivra Verification Code',
-                message=f'Your verification code is: {otp_code}. It is valid for 10 minutes.',
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@collivra.app'),
-                recipient_list=[email],
-                fail_silently=False,
-            )
-            print(f"[EMAIL OTP DISPATCH] Real email sent to {email}")
-            return True
-        except Exception as e:
-            print(f"[EMAIL OTP DISPATCH ERROR] Failed to send email to {email}: {e}")
+        t = threading.Thread(target=_dispatch_email, args=(email, otp_code), daemon=True)
+        t.start()
 
-    # Print to server console for local testing
+    # Print to server console for testing
     print(f"\n[EMAIL OTP DELIVERY] Destination: {email}")
     print(f"[EMAIL OTP DELIVERY] Your 6-digit Code is: {otp_code} (Expires in 10 minutes)\n")
     return True
