@@ -11,8 +11,10 @@ config = AutoConfig(search_path=str(BASE_DIR))
 
 SECRET_KEY = config('DJANGO_SECRET_KEY', default='django-insecure-collivra-backend-secret-key-1234567890')
 DEBUG = config('DEBUG', default=True, cast=bool)
-raw_hosts = config('ALLOWED_HOSTS', default='')
+raw_hosts = config('ALLOWED_HOSTS', default='*')
 ALLOWED_HOSTS = [h.strip() for h in raw_hosts.split(',') if h.strip()]
+if not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = ['*']
 
 NUM_PROXIES = config('NUM_PROXIES', default=1, cast=int)
 
@@ -42,9 +44,13 @@ MIDDLEWARE = [
 ]
 
 # CORS Configuration
-raw_cors = config('CORS_ALLOWED_ORIGINS', default='')
-CORS_ALLOWED_ORIGINS = [o.strip() for o in raw_cors.split(',') if o.strip()]
-CORS_ALLOW_CREDENTIALS = False
+raw_cors = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000')
+if raw_cors == '*' or config('CORS_ALLOW_ALL_ORIGINS', default=False, cast=bool):
+    CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOWED_ORIGINS = []
+else:
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in raw_cors.split(',') if o.strip()]
+CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'collivra_backend.urls'
 
