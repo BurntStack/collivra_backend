@@ -1,13 +1,13 @@
+import os
 from pathlib import Path
 import dj_database_url
-from decouple import Config, RepositoryEnv
+from decouple import AutoConfig
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from backend/.env
-env_path = BASE_DIR / '.env'
-config = Config(RepositoryEnv(str(env_path))) if env_path.exists() else Config(os.environ)
+# Load environment variables from backend/.env or system environment
+config = AutoConfig(search_path=str(BASE_DIR))
 
 SECRET_KEY = config('DJANGO_SECRET_KEY', default='django-insecure-collivra-backend-secret-key-1234567890')
 DEBUG = config('DEBUG', default=True, cast=bool)
@@ -61,16 +61,17 @@ TEMPLATES = [
 WSGI_APPLICATION = 'collivra_backend.wsgi.application'
 
 # Database configuration connecting via Supabase Transaction Pooler (port 6543)
-DATABASE_URL = config('DATABASE_URL')
+DATABASE_URL = config('DATABASE_URL', default='sqlite:///:memory:')
 DATABASES = {
     'default': dj_database_url.config(
         default=DATABASE_URL,
         conn_max_age=0,
-        ssl_require=True,
+        ssl_require=DATABASE_URL.startswith('postgres'),
     )
 }
 # Disable server-side cursors to ensure full compatibility with PgBouncer Transaction Pooling
-DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+if DATABASE_URL.startswith('postgres'):
+    DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
 
 # Supabase Configurations
 SUPABASE_URL = config('SUPABASE_URL', default='https://eetmsobqxlbsvcoscjnb.supabase.co')
