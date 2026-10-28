@@ -133,9 +133,10 @@ def send_email_otp(email, otp_code):
                 recipient_list=[email],
                 fail_silently=False,
             )
+            print(f"[EMAIL OTP DISPATCH] Real email sent to {email}")
             return True
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[EMAIL OTP DISPATCH ERROR] Failed to send email to {email}: {e}")
 
     # Print to server console for local testing
     print(f"\n[EMAIL OTP DELIVERY] Destination: {email}")
