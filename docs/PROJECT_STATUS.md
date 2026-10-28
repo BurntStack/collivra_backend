@@ -151,6 +151,9 @@ To prevent spam sign-ups and enforce email ownership before account creation and
 |---|---|---|---|---|---|
 | `GET` | `/health` | `AllowAny` | Public health status check | Integration | Public |
 | `POST` | `/auth/signup` | `AllowAny` | Legacy direct signup (brand -> active, creator -> unverified) | `tests/auth.sh`, `tests/approval.sh` | Public |
+| `POST` | `/api/v1/auth/signup/email` | `AllowAny` | Step 1: Generates 6-digit OTP, triggers email, returns `{"ok": true}` | `test_three_step_signup.py` | Public |
+| `POST` | `/api/v1/auth/signup/verify-email` | `AllowAny` | Step 2: Verifies OTP code, returns `{"verificationToken": "..."}` | `test_three_step_signup.py` | Public |
+| `POST` | `/api/v1/auth/signup/complete` | `AllowAny` | Step 3: Validates token, creates user, returns `{"token": "...", "user": {...}}` | `test_three_step_signup.py` | Public |
 | `POST` | `/auth/signup/request-otp` | `AllowAny` | Rate-limited (5/hr); generates 6-digit OTP with 10-min TTL | `tests/email_otp.sh` | Public |
 | `POST` | `/auth/signup/verify-and-register` | `AllowAny` | Verifies OTP; creates user; brand -> active, creator -> unverified | `tests/email_otp.sh` | Public |
 | `POST` | `/auth/otp/send` | `AllowAny` | OTP generation logged in `otp_send_log` | `tests/creator_auth.sh` | Public |

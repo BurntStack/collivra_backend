@@ -13,8 +13,15 @@ SECRET_KEY = config('DJANGO_SECRET_KEY', default='django-insecure-collivra-backe
 DEBUG = config('DEBUG', default=True, cast=bool)
 raw_hosts = config('ALLOWED_HOSTS', default='*')
 ALLOWED_HOSTS = [h.strip() for h in raw_hosts.split(',') if h.strip()]
-if not ALLOWED_HOSTS:
+if not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS:
     ALLOWED_HOSTS = ['*']
+else:
+    for h in ['.onrender.com', 'localhost', '127.0.0.1']:
+        if h not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(h)
+
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 NUM_PROXIES = config('NUM_PROXIES', default=1, cast=int)
 
@@ -44,13 +51,21 @@ MIDDLEWARE = [
 ]
 
 # CORS Configuration
+CORS_ALLOW_CREDENTIALS = True
 raw_cors = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000')
 if raw_cors == '*' or config('CORS_ALLOW_ALL_ORIGINS', default=False, cast=bool):
     CORS_ALLOW_ALL_ORIGINS = True
     CORS_ALLOWED_ORIGINS = []
 else:
     CORS_ALLOWED_ORIGINS = [o.strip() for o in raw_cors.split(',') if o.strip()]
-CORS_ALLOW_CREDENTIALS = True
+    for default_origin in ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"]:
+        if default_origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(default_origin)
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+    r"^https://.*\.onrender\.com$",
+]
 
 ROOT_URLCONF = 'collivra_backend.urls'
 

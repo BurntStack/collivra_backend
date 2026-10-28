@@ -1,5 +1,6 @@
 import json
 import re
+import jwt
 from datetime import datetime, timezone, timedelta
 from django.conf import settings
 from django.http import HttpResponse
@@ -197,6 +198,256 @@ class VerifyAndRegisterView(APIView):
             return Response({'message': 'Auto-login failed', 'code': 'auth_error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         signin_data = signin_res.json()
+        token = signin_data.get('access_token')
+
+        # Update profile status ('active' for brands, 'unverified' for creators)
+        target_status = 'active' if role == 'brand' else 'unverified'
+        profile = Profile.objects.filter(id=user_id).first()
+        if profile:
+            profile.role = role
+            profile.status = target_status
+            profile.email_verified_at = django_tz.now()
+            if company_name and role == 'brand':
+                profile.company_name = company_name
+            profile.save()
+
+        return Response({
+            'token': token,
+            'user': {
+                'id': user_id,
+                'name': name,
+                'email': email,
+                'companyName': company_name if role == 'brand' else None,
+                'role': role,
+                'status': target_status,
+            }
+        }, status=status.HTTP_201_CREATED)
+
+
+class SignupEmailView(APIView):
+    """
+    Step 1 of 3-step signup flow:
+    POST /api/v1/auth/signup/email
+    Request Body: {"email": "..."}
+    Response: {"ok": true}
+    """
+    permission_classes = [AllowAny]
+    throttle_classes = [EmailOtpRateThrottle]
+
+    def get(self, request):
+        return Response({
+            'endpoint': 'POST /api/v1/auth/signup/email',
+            'description': 'Step 1: Request 6-digit verification code to email',
+            'body': {'email': 'string (required)', 'role': 'brand | creator (default: brand)'},
+            'response': {'ok': True}
+        })
+
+    def post(self, request):
+        body = request.data or {}
+        email = (body.get('email') or '').strip().lower()
+        role = (body.get('role') or 'brand').strip().lower()
+
+        if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+            return Response({
+                'error': {'code': 'validation_error', 'message': 'Invalid email address'},
+                'message': 'Invalid email address',
+                'code': 'validation_error',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        if role not in ['brand', 'creator']:
+            role = 'brand'
+
+        # Prevent requesting OTP if email is already registered
+        if Profile.objects.filter(email=email).exists():
+            return Response({
+                'error': {'code': 'email_taken', 'message': 'This email is already registered'},
+                'message': 'This email is already registered',
+                'code': 'email_taken',
+            }, status=status.HTTP_409_CONFLICT)
+
+        otp_code = generate_and_store_email_otp(email, role)
+
+        resp = {'ok': True}
+        if getattr(settings, 'DEBUG', False) or getattr(settings, 'DEV_MODE', False) or email.endswith('.test'):
+            resp['devOtp'] = otp_code
+
+        return Response(resp, status=status.HTTP_200_OK)
+
+
+class SignupVerifyEmailView(APIView):
+    """
+    Step 2 of 3-step signup flow:
+    POST /api/v1/auth/signup/verify-email
+    Request Body: {"email": "...", "code": "..."}
+    Response: {"verificationToken": "..."}
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({
+            'endpoint': 'POST /api/v1/auth/signup/verify-email',
+            'description': 'Step 2: Verify OTP code and receive verificationToken',
+            'body': {'email': 'string (required)', 'code': 'string (6 digits, required)'},
+            'response': {'verificationToken': 'jwt_token_string'}
+        })
+
+    def post(self, request):
+        body = request.data or {}
+        email = (body.get('email') or '').strip().lower()
+        code = str(body.get('code') or body.get('otp') or '').strip()
+
+        if not email or not code:
+            return Response({
+                'error': {'code': 'invalid_otp', 'message': 'Email and code are required'},
+                'message': 'Email and code are required',
+                'code': 'invalid_otp',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        valid, reason = verify_email_otp(email, code)
+        if not valid:
+            return Response({
+                'error': {'code': 'invalid_otp', 'message': reason or 'Invalid OTP code'},
+                'message': reason or 'Invalid OTP code',
+                'code': 'invalid_otp',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate short-lived signed verificationToken (15 minutes)
+        payload = {
+            'email': email,
+            'purpose': 'signup_verification',
+            'exp': datetime.now(timezone.utc) + timedelta(minutes=15),
+            'iat': datetime.now(timezone.utc),
+        }
+        verification_token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+
+        return Response({'verificationToken': verification_token}, status=status.HTTP_200_OK)
+
+
+class SignupCompleteView(APIView):
+    """
+    Step 3 of 3-step signup flow:
+    POST /api/v1/auth/signup/complete
+    Request Body: {"email": "...", "verificationToken": "...", "password": "...", "name": "...", "role": "..."}
+    Response: {"token": "...", "user": { ... }}
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({
+            'endpoint': 'POST /api/v1/auth/signup/complete',
+            'description': 'Step 3: Complete signup with verified token, password, and profile metadata',
+            'body': {
+                'email': 'string (required)',
+                'verificationToken': 'string (required)',
+                'password': 'string (min 8 chars, required)',
+                'name': 'string (min 2 chars, required)',
+                'role': 'brand | creator (default: brand)',
+                'companyName': 'string (optional for brand)'
+            },
+            'response': {'token': 'jwt_session_token', 'user': {'id': 'uuid', 'name': '...', 'email': '...', 'role': '...', 'status': 'active | unverified'}}
+        })
+
+    def post(self, request):
+        body = request.data or {}
+        email = (body.get('email') or '').strip().lower()
+        verification_token = body.get('verificationToken') or ''
+        password = body.get('password') or ''
+        name = (body.get('name') or '').strip()
+        role = (body.get('role') or 'brand').strip().lower()
+        company_name = (body.get('companyName') or '').strip()
+
+        # Validate verificationToken
+        if not verification_token:
+            return Response({
+                'error': {'code': 'invalid_token', 'message': 'Verification token is required'},
+                'message': 'Verification token is required',
+                'code': 'invalid_token',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            token_payload = jwt.decode(verification_token, settings.SECRET_KEY, algorithms=['HS256'])
+            token_email = (token_payload.get('email') or '').strip().lower()
+            if token_email != email or token_payload.get('purpose') != 'signup_verification':
+                return Response({
+                    'error': {'code': 'invalid_token', 'message': 'Invalid verification token'},
+                    'message': 'Invalid verification token',
+                    'code': 'invalid_token',
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except jwt.ExpiredSignatureError:
+            return Response({
+                'error': {'code': 'token_expired', 'message': 'Verification token has expired. Please verify your email again.'},
+                'message': 'Verification token has expired. Please verify your email again.',
+                'code': 'token_expired',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({
+                'error': {'code': 'invalid_token', 'message': 'Invalid verification token'},
+                'message': 'Invalid verification token',
+                'code': 'invalid_token',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        fields = {}
+        if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+            fields['email'] = 'Invalid email address'
+        if len(name) < 2:
+            fields['name'] = 'Name must be at least 2 characters'
+        if len(password) < 8:
+            fields['password'] = 'Password must be at least 8 characters'
+        if role not in ['brand', 'creator']:
+            fields['role'] = 'Role must be brand or creator'
+        if role == 'brand' and company_name and len(company_name) < 2:
+            fields['companyName'] = 'Company name must be at least 2 characters'
+
+        if fields:
+            return Response({
+                'error': {'code': 'validation_error', 'message': next(iter(fields.values()))},
+                'message': next(iter(fields.values())),
+                'code': 'validation_error',
+                'fields': fields,
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # Check existing profile
+        if Profile.objects.filter(email=email).exists():
+            return Response({
+                'error': {'code': 'email_taken', 'message': 'This email is already registered'},
+                'message': 'This email is already registered',
+                'code': 'email_taken',
+            }, status=status.HTTP_409_CONFLICT)
+
+        user_metadata = {
+            'name': name,
+            'role': role,
+            'company_name': company_name if role == 'brand' else None,
+        }
+
+        # Create user via Supabase Admin API
+        res = supabase_auth.create_user(
+            email=email,
+            password=password,
+            user_metadata=user_metadata
+        )
+
+        if res.status_code not in (200, 201):
+            err_data = res.json() if res.content else {}
+            msg = err_data.get('msg') or err_data.get('error_description') or err_data.get('message') or 'Signup failed'
+            if 'already registered' in msg.lower() or 'already exists' in msg.lower():
+                return Response({
+                    'error': {'code': 'email_taken', 'message': 'This email is already registered'},
+                    'message': 'This email is already registered',
+                    'code': 'email_taken',
+                }, status=status.HTTP_409_CONFLICT)
+            return Response({
+                'error': {'code': 'auth_error', 'message': msg},
+                'message': msg,
+                'code': 'auth_error',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        user_data = res.json()
+        user_id = user_data.get('id')
+
+        # Sign in with password to get real access token
+        signin_res = supabase_auth.sign_in_with_password(email, password)
+        signin_data = signin_res.json() if signin_res.content else {}
         token = signin_data.get('access_token')
 
         # Update profile status ('active' for brands, 'unverified' for creators)

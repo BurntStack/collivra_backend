@@ -327,6 +327,8 @@ class SupabaseAuthClient:
         res = requests.post(f"{self.url}/auth/v1/admin/users", headers=headers, json=payload, timeout=10)
         return res
 
+    admin_create_user = create_user
+
     def sign_in_with_password(self, email, password):
         headers = {
             'apikey': self.anon_key,
