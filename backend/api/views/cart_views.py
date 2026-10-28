@@ -1,4 +1,5 @@
 import uuid
+from django.conf import settings
 from django.utils import timezone as django_tz
 from rest_framework import status
 from rest_framework.views import APIView
@@ -59,6 +60,9 @@ class CartItemCreateView(APIView):
         pkg = CreatorPackage.objects.filter(id=package_id, creator_id=creator_id).select_related('creator').first()
         if not pkg:
             return Response({'error': {'code': 'package_not_found', 'message': 'Package not found for this creator'}}, status=status.HTTP_404_NOT_FOUND)
+
+        if pkg.creator and pkg.creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False):
+            return Response({'error': {'code': 'creator_not_found', 'message': 'Creator not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         if pkg.is_active is False:
             return Response({'error': {'code': 'package_inactive', 'message': 'Package is inactive'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
@@ -137,7 +141,7 @@ class OffersView(APIView):
             return Response({'error': {'code': 'validation_error', 'message': 'Invalid offer parameters'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         creator = Creator.objects.filter(id=creator_id).first()
-        if not creator:
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
             return Response({'error': {'code': 'creator_not_found', 'message': 'Creator not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         profile = Profile.objects.filter(id=request.user.id).first()

@@ -1,4 +1,6 @@
 import uuid
+from django.conf import settings
+from django.db import transaction
 from django.utils import timezone as django_tz
 from rest_framework import status
 from rest_framework.views import APIView
@@ -54,7 +56,7 @@ class OrderListCreateView(APIView):
             return Response({'error': {'code': 'invalid_amount', 'message': 'Valid positive amount in INR is required'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         creator = Creator.objects.filter(id=creator_id).first()
-        if not creator:
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
             return Response({'error': {'code': 'creator_not_found', 'message': 'Creator not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         package = CreatorPackage.objects.filter(id=package_id).first() if package_id else None
@@ -94,32 +96,34 @@ class OrderPayView(APIView):
     def post(self, request, pk):
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
-        order = Order.objects.filter(id=pk).select_related('creator').first()
-        if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
-            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        if order.status != 'awaiting_payment':
-            return Response({'error': {'code': 'invalid_order_state', 'message': f"Payment is allowed only from awaiting_payment, current status: {order.status}"}}, status=status.HTTP_409_CONFLICT)
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(id=pk).select_related('creator').first()
+            if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
+                return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        clean_id = str(order.id).replace('-', '')[:16]
-        payment_intent = f"pi_test_{clean_id}"
-        client_secret = f"pi_test_secret_{clean_id}"
+            if order.status != 'awaiting_payment':
+                return Response({'error': {'code': 'invalid_order_state', 'message': f"Payment is allowed only from awaiting_payment, current status: {order.status}"}}, status=status.HTTP_409_CONFLICT)
 
-        order.payment_intent = payment_intent
-        order.client_secret = client_secret
-        order.updated_at = django_tz.now()
-        order.save()
+            clean_id = str(order.id).replace('-', '')[:16]
+            payment_intent = f"pi_test_{clean_id}"
+            client_secret = f"pi_test_secret_{clean_id}"
 
-        return Response({
-            'orderId': str(order.id),
-            'amount': order.amount,
-            'currency': 'INR',
-            'clientToken': client_secret,
-            'clientSecret': client_secret,
-            'paymentIntent': payment_intent,
-            'status': 'awaiting_payment',
-            'provider': 'razorpay_test',
-        })
+            order.payment_intent = payment_intent
+            order.client_secret = client_secret
+            order.updated_at = django_tz.now()
+            order.save()
+
+            return Response({
+                'orderId': str(order.id),
+                'amount': order.amount,
+                'currency': 'INR',
+                'clientToken': client_secret,
+                'clientSecret': client_secret,
+                'paymentIntent': payment_intent,
+                'status': 'awaiting_payment',
+                'provider': 'razorpay_test',
+            })
 
 class OrderConfirmStubView(APIView):
     permission_classes = [IsBrandUser]
@@ -127,20 +131,22 @@ class OrderConfirmStubView(APIView):
     def post(self, request, pk):
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
-        order = Order.objects.filter(id=pk).select_related('creator').first()
-        if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
-            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        if order.status != 'awaiting_payment':
-            return Response({'error': {'code': 'invalid_order_state', 'message': f"Order cannot be confirmed from status: {order.status}"}}, status=status.HTTP_409_CONFLICT)
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(id=pk).select_related('creator').first()
+            if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
+                return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        now = django_tz.now()
-        order.status = 'in_escrow'
-        order.funded_at = now
-        order.updated_at = now
-        order.save()
+            if order.status != 'awaiting_payment':
+                return Response({'error': {'code': 'invalid_order_state', 'message': f"Order cannot be confirmed from status: {order.status}"}}, status=status.HTTP_409_CONFLICT)
 
-        return Response(format_order(order))
+            now = django_tz.now()
+            order.status = 'in_escrow'
+            order.funded_at = now
+            order.updated_at = now
+            order.save()
+
+            return Response(format_order(order))
 
 class OrderSubmitDraftView(APIView):
     def post(self, request, pk):
@@ -153,37 +159,39 @@ class OrderSubmitDraftView(APIView):
 
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
-        order = Order.objects.filter(id=pk).select_related('creator').first()
-        if not order:
-            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        if order.status not in ['in_escrow', 'changes_requested']:
-            return Response({'error': {'code': 'invalid_order_state', 'message': f"Draft submission allowed only from in_escrow or changes_requested, current: {order.status}"}}, status=status.HTTP_409_CONFLICT)
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(id=pk).select_related('creator').first()
+            if not order:
+                return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        body = request.data or {}
-        draft_url = body.get('draftUrl') or body.get('url') or 'https://assets.collivra.com/drafts/demo-reel.mp4'
-        note = body.get('note') or 'Draft video submitted for review.'
+            if order.status not in ['in_escrow', 'changes_requested']:
+                return Response({'error': {'code': 'invalid_order_state', 'message': f"Draft submission allowed only from in_escrow or changes_requested, current: {order.status}"}}, status=status.HTTP_409_CONFLICT)
 
-        now = django_tz.now()
-        order.draft_url = draft_url
-        order.status = 'draft_submitted'
-        order.updated_at = now
-        order.save()
+            body = request.data or {}
+            draft_url = body.get('draftUrl') or body.get('url') or 'https://assets.collivra.com/drafts/demo-reel.mp4'
+            note = body.get('note') or 'Draft video submitted for review.'
 
-        # Add message in thread
-        sender_profile = Profile.objects.filter(id=request.user.id).first()
-        OrderMessage.objects.create(
-            id=uuid.uuid4(),
-            order=order,
-            sender=sender_profile,
-            sender_name=sender_profile.name if sender_profile else 'Admin / Creator',
-            sender_role='creator',
-            message=note,
-            attachments=[{'url': draft_url, 'type': 'video'}],
-            created_at=now,
-        )
+            now = django_tz.now()
+            order.draft_url = draft_url
+            order.status = 'draft_submitted'
+            order.updated_at = now
+            order.save()
 
-        return Response(format_order(order))
+            # Add message in thread
+            sender_profile = Profile.objects.filter(id=request.user.id).first()
+            OrderMessage.objects.create(
+                id=uuid.uuid4(),
+                order=order,
+                sender=sender_profile,
+                sender_name=sender_profile.name if sender_profile else 'Admin / Creator',
+                sender_role='creator',
+                message=note,
+                attachments=[{'url': draft_url, 'type': 'video'}],
+                created_at=now,
+            )
+
+            return Response(format_order(order))
 
 class OrderRequestChangesView(APIView):
     permission_classes = [IsBrandUser]
@@ -191,50 +199,52 @@ class OrderRequestChangesView(APIView):
     def post(self, request, pk):
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
-        order = Order.objects.filter(id=pk).select_related('creator').first()
-        if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
-            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         body = request.data or {}
         note = (body.get('note') or body.get('feedback') or body.get('comment') or '').strip()
         if not note:
             return Response({'error': {'code': 'missing_note', 'message': 'Change request note is required'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
-        if order.status != 'draft_submitted':
-            return Response({
-                'error': {'code': 'invalid_order_state', 'message': f"Changes can only be requested from draft_submitted, current: {order.status}"},
-                'code': 'invalid_order_state',
-                'message': f"Changes can only be requested from draft_submitted, current: {order.status}",
-            }, status=status.HTTP_409_CONFLICT)
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(id=pk).select_related('creator').first()
+            if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
+                return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        current_rev = order.revision_count or 0
-        if current_rev >= 2:
-            return Response({
-                'error': {'code': 'max_revisions_reached', 'message': 'Maximum 2 revisions allowed for this order'},
-                'code': 'max_revisions_reached',
-                'message': 'Maximum 2 revisions allowed for this order',
-            }, status=status.HTTP_409_CONFLICT)
+            if order.status != 'draft_submitted':
+                return Response({
+                    'error': {'code': 'invalid_order_state', 'message': f"Changes can only be requested from draft_submitted, current: {order.status}"},
+                    'code': 'invalid_order_state',
+                    'message': f"Changes can only be requested from draft_submitted, current: {order.status}",
+                }, status=status.HTTP_409_CONFLICT)
 
-        now = django_tz.now()
-        order.revision_count = current_rev + 1
-        order.change_note = note
-        order.status = 'changes_requested'
-        order.updated_at = now
-        order.save()
+            current_rev = order.revision_count or 0
+            if current_rev >= 2:
+                return Response({
+                    'error': {'code': 'max_revisions_reached', 'message': 'Maximum 2 revisions allowed for this order'},
+                    'code': 'max_revisions_reached',
+                    'message': 'Maximum 2 revisions allowed for this order',
+                }, status=status.HTTP_409_CONFLICT)
 
-        sender_profile = Profile.objects.filter(id=request.user.id).first()
-        OrderMessage.objects.create(
-            id=uuid.uuid4(),
-            order=order,
-            sender=sender_profile,
-            sender_name=sender_profile.company_name or sender_profile.name if sender_profile else 'Brand',
-            sender_role='brand',
-            message=f"Changes requested: {note}",
-            attachments=[],
-            created_at=now,
-        )
+            now = django_tz.now()
+            order.revision_count = current_rev + 1
+            order.change_note = note
+            order.status = 'changes_requested'
+            order.updated_at = now
+            order.save()
 
-        return Response(format_order(order))
+            sender_profile = Profile.objects.filter(id=request.user.id).first()
+            OrderMessage.objects.create(
+                id=uuid.uuid4(),
+                order=order,
+                sender=sender_profile,
+                sender_name=sender_profile.company_name or sender_profile.name if sender_profile else 'Brand',
+                sender_role='brand',
+                message=f"Changes requested: {note}",
+                attachments=[],
+                created_at=now,
+            )
+
+            return Response(format_order(order))
 
 class OrderApproveView(APIView):
     permission_classes = [IsBrandUser]
@@ -242,36 +252,38 @@ class OrderApproveView(APIView):
     def post(self, request, pk):
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
-        order = Order.objects.filter(id=pk).select_related('creator').first()
-        if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
-            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        # Idempotent 200 if already released
-        if order.status == 'released':
+        with transaction.atomic():
+            order = Order.objects.select_for_update().filter(id=pk).select_related('creator').first()
+            if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
+                return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
+
+            # Idempotent 200 if already released
+            if order.status == 'released':
+                return Response(format_order(order))
+
+            if order.status != 'draft_submitted':
+                return Response({'error': {'code': 'invalid_order_state', 'message': f"Order can only be approved from draft_submitted, current: {order.status}"}}, status=status.HTTP_409_CONFLICT)
+
+            now = django_tz.now()
+            order.status = 'released'
+            order.released_at = now
+            order.updated_at = now
+            order.save()
+
+            sender_profile = Profile.objects.filter(id=request.user.id).first()
+            OrderMessage.objects.create(
+                id=uuid.uuid4(),
+                order=order,
+                sender=sender_profile,
+                sender_name=sender_profile.company_name or sender_profile.name if sender_profile else 'Brand',
+                sender_role='brand',
+                message='Deliverable approved! Escrow payment has been released to the creator.',
+                attachments=[],
+                created_at=now,
+            )
+
             return Response(format_order(order))
-
-        if order.status != 'draft_submitted':
-            return Response({'error': {'code': 'invalid_order_state', 'message': f"Order can only be approved from draft_submitted, current: {order.status}"}}, status=status.HTTP_409_CONFLICT)
-
-        now = django_tz.now()
-        order.status = 'released'
-        order.released_at = now
-        order.updated_at = now
-        order.save()
-
-        sender_profile = Profile.objects.filter(id=request.user.id).first()
-        OrderMessage.objects.create(
-            id=uuid.uuid4(),
-            order=order,
-            sender=sender_profile,
-            sender_name=sender_profile.company_name or sender_profile.name if sender_profile else 'Brand',
-            sender_role='brand',
-            message='Deliverable approved! Escrow payment has been released to the creator.',
-            attachments=[],
-            created_at=now,
-        )
-
-        return Response(format_order(order))
 
 class OrderMessagesView(APIView):
     permission_classes = [IsBrandUser]

@@ -82,9 +82,12 @@ class ShortlistListCreateView(APIView):
 
     def get(self, request):
         lists = Shortlist.objects.filter(brand_id=request.user.id).order_by('-updated_at')
+        show_seed = getattr(settings, 'SHOW_SEED_DATA', False)
         res = []
         for l in lists:
             sc_items = ShortlistCreator.objects.filter(list_id=l.id).select_related('creator')
+            if not show_seed:
+                sc_items = sc_items.filter(creator__is_seed=False)
             covers = [sc.creator.image for sc in sc_items if sc.creator and sc.creator.image][:4]
             res.append({
                 'id': str(l.id),
@@ -127,7 +130,10 @@ class ShortlistDetailView(APIView):
         if not l:
             return Response({'error': {'code': 'list_not_found', 'message': 'List not found'}}, status=status.HTTP_404_NOT_FOUND)
 
+        show_seed = getattr(settings, 'SHOW_SEED_DATA', False)
         sc_items = ShortlistCreator.objects.filter(list_id=l.id).select_related('creator')
+        if not show_seed:
+            sc_items = sc_items.filter(creator__is_seed=False)
         creators = [format_creator_card(sc.creator) for sc in sc_items if sc.creator]
 
         return Response({
@@ -179,7 +185,7 @@ class ShortlistCreatorManageView(APIView):
             return Response({'error': {'code': 'missing_creator', 'message': 'creatorId is required'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         creator = Creator.objects.filter(id=creator_id).first()
-        if not creator:
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
             return Response({'error': {'code': 'creator_not_found', 'message': 'Creator not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         ShortlistCreator.objects.update_or_create(
@@ -198,6 +204,10 @@ class ShortlistCreatorManageView(APIView):
         l = Shortlist.objects.filter(id=pk, brand_id=request.user.id).first()
         if not l:
             return Response({'error': {'code': 'list_not_found', 'message': 'List not found'}}, status=status.HTTP_404_NOT_FOUND)
+
+        creator = Creator.objects.filter(id=creator_id).first()
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
+            return Response({'error': {'code': 'creator_not_found', 'message': 'Creator not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         ShortlistCreator.objects.filter(list_id=pk, creator_id=creator_id).delete()
         l.updated_at = django_tz.now()
@@ -259,7 +269,7 @@ class DeliverablesListView(APIView):
     def get(self, request):
         qs = Deliverable.objects.filter(brand_id=request.user.id).select_related('creator', 'campaign').order_by('-delivered_at')
 
-        show_seed = getattr(settings, 'SHOW_SEED_DATA', True)
+        show_seed = getattr(settings, 'SHOW_SEED_DATA', False)
         if not show_seed:
             qs = qs.filter(is_seed=False)
 

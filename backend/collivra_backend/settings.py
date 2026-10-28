@@ -11,7 +11,10 @@ config = AutoConfig(search_path=str(BASE_DIR))
 
 SECRET_KEY = config('DJANGO_SECRET_KEY', default='django-insecure-collivra-backend-secret-key-1234567890')
 DEBUG = config('DEBUG', default=True, cast=bool)
-ALLOWED_HOSTS = ['*']
+raw_hosts = config('ALLOWED_HOSTS', default='')
+ALLOWED_HOSTS = [h.strip() for h in raw_hosts.split(',') if h.strip()]
+
+NUM_PROXIES = config('NUM_PROXIES', default=1, cast=int)
 
 INSTALLED_APPS = [
     'django.contrib.auth',
@@ -85,6 +88,11 @@ DEV_MODE = config('DEV_MODE', default=True, cast=bool)
 SHOW_SEED_DATA = config('SHOW_SEED_DATA', default=False, cast=bool)
 FIELD_ENCRYPTION_KEY = config('FIELD_ENCRYPTION_KEY', default='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
 
+# Twilio Verify Configuration
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
+TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
+TWILIO_VERIFY_SERVICE_SID = config('TWILIO_VERIFY_SERVICE_SID', default='')
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'api.authentication.SupabaseAuthentication',
@@ -92,6 +100,18 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '120/min',
+        'login': '5/min',
+        'otp_send': '5/hour',
+        'signup': '10/hour',
+    },
+    'NUM_PROXIES': NUM_PROXIES,
     'EXCEPTION_HANDLER': 'api.errors.custom_exception_handler',
     'UNAUTHENTICATED_USER': None,
 }

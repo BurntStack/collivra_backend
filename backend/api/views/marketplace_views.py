@@ -70,7 +70,7 @@ class CreatorListView(APIView):
     def get(self, request):
         qs = Creator.objects.all()
 
-        show_seed = getattr(settings, 'SHOW_SEED_DATA', True)
+        show_seed = getattr(settings, 'SHOW_SEED_DATA', False)
         if not show_seed:
             qs = qs.filter(is_seed=False)
 
@@ -153,7 +153,7 @@ class CreatorDetailView(APIView):
 
     def get(self, request, pk):
         creator = Creator.objects.filter(id=pk).first()
-        if not creator:
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
             return Response({'error': {'code': 'not_found', 'message': 'Creator not found'}, 'message': 'Creator not found'}, status=status.HTTP_404_NOT_FOUND)
 
         card = format_creator_card(creator)
@@ -169,6 +169,10 @@ class CreatorPackagesView(APIView):
     permission_classes = [IsBrandUser]
 
     def get(self, request, pk):
+        creator = Creator.objects.filter(id=pk).first()
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
+            return Response({'error': {'code': 'not_found', 'message': 'Creator not found'}, 'message': 'Creator not found'}, status=status.HTTP_404_NOT_FOUND)
+
         packages = CreatorPackage.objects.filter(creator_id=pk).order_by('price')
         res = [{
             'id': p.id,
@@ -184,6 +188,9 @@ class CreatorReviewsView(APIView):
 
     def get(self, request, pk):
         creator = Creator.objects.filter(id=pk).first()
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
+            return Response({'error': {'code': 'not_found', 'message': 'Creator not found'}, 'message': 'Creator not found'}, status=status.HTTP_404_NOT_FOUND)
+
         page = max(1, int(request.query_params.get('page', 1)))
         page_size = max(1, int(request.query_params.get('pageSize', 10)))
 
@@ -215,16 +222,24 @@ class CreatorSimilarView(APIView):
 
     def get(self, request, pk):
         current = Creator.objects.filter(id=pk).first()
+        if not current or (current.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
+            return Response({'error': {'code': 'not_found', 'message': 'Creator not found'}, 'message': 'Creator not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        show_seed = getattr(settings, 'SHOW_SEED_DATA', False)
+        base_qs = Creator.objects.exclude(id=pk)
+        if not show_seed:
+            base_qs = base_qs.filter(is_seed=False)
+
         similar = []
         if current and current.category:
             primary = current.category.split(',')[0].strip()
-            similar = list(Creator.objects.filter(category__icontains=primary).exclude(id=pk).order_by('-rating')[:3])
+            similar = list(base_qs.filter(category__icontains=primary).order_by('-rating')[:3])
 
         if not similar and current and current.platform:
-            similar = list(Creator.objects.filter(platform__icontains=current.platform).exclude(id=pk).order_by('-rating')[:3])
+            similar = list(base_qs.filter(platform__icontains=current.platform).order_by('-rating')[:3])
 
         if not similar:
-            similar = list(Creator.objects.exclude(id=pk).order_by('-rating')[:3])
+            similar = list(base_qs.order_by('-rating')[:3])
 
         return Response([format_creator_card(c) for c in similar])
 
@@ -235,7 +250,7 @@ class CreatorSaveView(APIView):
         user_id = request.user.id
         profile = Profile.objects.filter(id=user_id).first()
         creator = Creator.objects.filter(id=pk).first()
-        if not creator or not profile:
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)) or not profile:
             return Response({'error': {'code': 'not_found', 'message': 'Not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         SavedCreator.objects.update_or_create(
@@ -246,5 +261,9 @@ class CreatorSaveView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def delete(self, request, pk):
+        creator = Creator.objects.filter(id=pk).first()
+        if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
+            return Response({'error': {'code': 'not_found', 'message': 'Not found'}}, status=status.HTTP_404_NOT_FOUND)
+
         SavedCreator.objects.filter(user_id=request.user.id, creator_id=pk).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

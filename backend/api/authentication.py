@@ -1,13 +1,24 @@
 import jwt
-import requests
+from jwt import PyJWKClient
 from django.conf import settings
 from rest_framework import authentication, exceptions
 from .models import Profile
+
+_jwks_client = None
+
+def get_jwks_client():
+    global _jwks_client
+    if _jwks_client is None:
+        jwks_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        _jwks_client = PyJWKClient(jwks_url, cache_jwk_set=True, lifespan=3600)
+    return _jwks_client
+
 
 class SupabaseUser:
     """Represents an authenticated Supabase user in Django request context."""
     def __init__(self, user_id, email=None, role=None, raw_claims=None):
         self.id = str(user_id)
+        self.pk = self.id
         self.email = email
         self.role = role or 'brand'
         self.raw_claims = raw_claims or {}
@@ -20,8 +31,8 @@ class SupabaseUser:
 
 class SupabaseAuthentication(authentication.BaseAuthentication):
     """
-    DRF Authentication class that decodes and validates Supabase JWTs from
-    the Authorization: Bearer header.
+    DRF Authentication class verifying GoTrue JWTs against Supabase JWKS with
+    aud 'authenticated', issuer check, and blocking suspended/banned accounts.
     """
     def authenticate_header(self, request):
         return 'Bearer'
@@ -38,63 +49,47 @@ class SupabaseAuthentication(authentication.BaseAuthentication):
         token = parts[1]
         user_claims = None
 
-        # 1. Try decoding with SUPABASE_JWT_SECRET if available
-        if settings.SUPABASE_JWT_SECRET:
-            try:
-                user_claims = jwt.decode(
-                    token,
-                    settings.SUPABASE_JWT_SECRET,
-                    algorithms=['HS256'],
-                    options={"verify_aud": False}
-                )
-            except jwt.ExpiredSignatureError:
-                raise exceptions.AuthenticationFailed('Token has expired')
-            except jwt.InvalidTokenError:
-                user_claims = None
-
-        # 2. Fall back to calling Supabase Auth API /auth/v1/user
-        if not user_claims and settings.SUPABASE_URL and settings.SUPABASE_ANON_KEY:
-            try:
-                res = requests.get(
-                    f"{settings.SUPABASE_URL}/auth/v1/user",
-                    headers={
-                        'Authorization': f"Bearer {token}",
-                        'apikey': settings.SUPABASE_ANON_KEY,
-                    },
-                    timeout=5,
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    user_claims = {
-                        'sub': data.get('id'),
-                        'email': data.get('email'),
-                        'user_metadata': data.get('user_metadata', {}),
-                    }
-                elif res.status_code == 401:
-                    raise exceptions.AuthenticationFailed('Invalid or expired token')
-            except requests.RequestException:
-                pass
+        issuer = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1"
+        try:
+            client = get_jwks_client()
+            signing_key = client.get_signing_key_from_jwt(token)
+            user_claims = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=['ES256', 'RS256'],
+                audience='authenticated',
+                issuer=issuer,
+                options={"verify_aud": True, "verify_iss": True}
+            )
+        except jwt.ExpiredSignatureError:
+            raise exceptions.AuthenticationFailed('Token has expired')
+        except Exception as e:
+            raise exceptions.AuthenticationFailed(f'Invalid token: {str(e)}')
 
         if not user_claims or not user_claims.get('sub'):
-            raise exceptions.AuthenticationFailed('Invalid Supabase token')
+            raise exceptions.AuthenticationFailed('Invalid token claims')
 
         user_id = user_claims.get('sub')
         email = user_claims.get('email')
 
-        # Determine role: check database Profile first, fallback to user_metadata
+        # Block suspended and banned accounts on every request
+        profile = Profile.objects.filter(id=user_id).first()
+        if profile and profile.status in ['suspended', 'banned']:
+            raise exceptions.PermissionDenied(f"Your account is {profile.status}")
+
         role = None
-        try:
-            profile = Profile.objects.filter(id=user_id).first()
-            if profile:
-                role = profile.role
-                if not email:
-                    email = profile.email
-        except Exception:
-            pass
+        if profile:
+            role = profile.role
+            if not email:
+                email = profile.email
 
         if not role:
             metadata = user_claims.get('user_metadata') or {}
             role = metadata.get('role', 'brand')
+
+        # Safeguard: strictly bind admin/super_admin privileges to socials@burntstack.com
+        if role in ['admin', 'super_admin'] and (email or '').strip().lower() != 'socials@burntstack.com':
+            role = 'brand'
 
         user = SupabaseUser(user_id=user_id, email=email, role=role, raw_claims=user_claims)
         return (user, token)

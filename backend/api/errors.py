@@ -85,12 +85,14 @@ def custom_exception_handler(exc, context):
         return response
 
     # Unhandled exceptions (500)
+    import traceback
+    traceback.print_exc()
     return JsonResponse({
-        'message': 'An unexpected server error occurred',
+        'message': f'An unexpected server error occurred: {exc}',
         'code': 'server_error',
         'error': {
             'code': 'server_error',
-            'message': 'An unexpected server error occurred',
+            'message': str(exc),
         }
     }, status=500)
 

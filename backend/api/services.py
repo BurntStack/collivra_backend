@@ -41,16 +41,76 @@ def is_dev_number(mobile):
     return mobile in dev_numbers or str(mobile).startswith('+9199999999')
 
 def send_otp(mobile):
-    # In DEV_MODE or for test numbers, return without external SMS
-    if getattr(settings, 'DEV_MODE', True) or is_dev_number(mobile):
+    """
+    Sends an SMS OTP.
+    - If DEV_MODE is True and the number is whitelisted, simulated send succeeds.
+    - If DEV_MODE is False (or number not whitelisted), Twilio Verify is required.
+      If Twilio Verify credentials are not configured or call fails, it fails closed (returns False).
+    """
+    if getattr(settings, 'DEV_MODE', False) and is_dev_number(mobile):
         return True
-    return True
+
+    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None) or os.environ.get('TWILIO_ACCOUNT_SID')
+    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None) or os.environ.get('TWILIO_AUTH_TOKEN')
+    service_sid = getattr(settings, 'TWILIO_VERIFY_SERVICE_SID', None) or os.environ.get('TWILIO_VERIFY_SERVICE_SID')
+
+    if not (account_sid and auth_token and service_sid):
+        # Fail closed
+        return False
+
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        verification = client.verify.v2.services(service_sid).verifications.create(to=mobile, channel='sms')
+        return verification.status in ['pending', 'approved']
+    except Exception:
+        # Fail closed on any Twilio exception
+        return False
 
 def check_otp(mobile, code):
-    if getattr(settings, 'DEV_MODE', True) or is_dev_number(mobile):
+    """
+    Verifies an SMS OTP code.
+    - If DEV_MODE is True and the number is whitelisted, dev code is accepted.
+    - If DEV_MODE is False (or number not whitelisted), dev code is NOT accepted.
+      Twilio Verify is required. If Twilio Verify is unconfigured or check fails, it fails closed (returns False).
+    """
+    if getattr(settings, 'DEV_MODE', False) and is_dev_number(mobile):
         dev_code = os.environ.get('DEV_OTP_CODE', '123456')
         return str(code).strip() in [dev_code, '000000', '123456']
-    return str(code).strip() == '123456'
+
+    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None) or os.environ.get('TWILIO_ACCOUNT_SID')
+    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None) or os.environ.get('TWILIO_AUTH_TOKEN')
+    service_sid = getattr(settings, 'TWILIO_VERIFY_SERVICE_SID', None) or os.environ.get('TWILIO_VERIFY_SERVICE_SID')
+
+    if not (account_sid and auth_token and service_sid):
+        # Fail closed: never allow verification when Twilio Verify credentials are not present and DEV_MODE is false
+        return False
+
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        verification_check = client.verify.v2.services(service_sid).verification_checks.create(to=mobile, code=str(code).strip())
+        return verification_check.status == 'approved'
+    except Exception:
+        # Fail closed on any exception
+        return False
+
+def approve_test_creator(user_id_or_mobile):
+    """
+    Service-side helper to approve a creator account (setting status='active').
+    Used by integration tests. Never exposed via public API.
+    """
+    from .models import Profile
+    p = None
+    if is_valid_uuid(str(user_id_or_mobile)):
+        p = Profile.objects.filter(id=user_id_or_mobile).first()
+    if not p:
+        p = Profile.objects.filter(mobile=user_id_or_mobile).first()
+    if p:
+        p.status = 'active'
+        p.save()
+        return True
+    return False
 
 # Field encryption (AES-256-GCM or HMAC/base64 stub for mock/dev)
 def encrypt_field(plain):
@@ -216,14 +276,17 @@ class SupabaseAuthClient:
         )
         return res
 
-    def sign_out(self, access_token):
+    def delete_user(self, user_id):
         headers = {
             'apikey': self.service_key,
             'Authorization': f'Bearer {self.service_key}',
         }
+        res = requests.delete(f"{self.url}/auth/v1/admin/users/{user_id}", headers=headers, timeout=10)
         try:
-            requests.post(f"{self.url}/auth/v1/admin/users/logout", headers=headers, timeout=5)
+            from .models import Profile
+            Profile.objects.filter(id=user_id).delete()
         except Exception:
             pass
+        return res
 
 supabase_auth = SupabaseAuthClient()

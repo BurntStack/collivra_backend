@@ -13,6 +13,7 @@ from ..services import (
     normalize_mobile, send_otp, check_otp, supabase_auth,
     PHONE_EMAIL_DOMAIN, LOCK_MINUTES, MAX_FAILED_LOGINS
 )
+from ..throttling import LoginRateThrottle, SignupRateThrottle, OtpSendRateThrottle
 
 def format_user_payload(profile, email=None):
     return {
@@ -31,6 +32,7 @@ class HealthCheckView(APIView):
 
 class SignupView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [SignupRateThrottle]
 
     def post(self, request):
         body = request.data or {}
@@ -165,6 +167,7 @@ class SignupView(APIView):
 
 class OtpSendView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [OtpSendRateThrottle]
 
     def post(self, request):
         mobile = normalize_mobile(request.data.get('mobile'))
@@ -220,6 +223,7 @@ class OtpVerifyView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     def post(self, request):
         body = request.data or {}

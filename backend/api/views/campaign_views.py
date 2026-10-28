@@ -1,6 +1,6 @@
 import uuid
-from datetime import datetime, timedelta
-from django.db import transaction
+from datetime import datetime, timezone, timedelta
+from django.db import transaction, IntegrityError, connection, DatabaseError
 from django.utils import timezone as django_tz
 from rest_framework import status
 from rest_framework.views import APIView
@@ -251,60 +251,74 @@ class CampaignBidsView(APIView):
     def post(self, request, pk):
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'campaign_not_found', 'message': 'Campaign not found'}}, status=status.HTTP_404_NOT_FOUND)
+
+        # 1. Enforce creator status must be active
+        profile = Profile.objects.filter(id=request.user.id).first()
+        if not profile or profile.status != 'active':
+            return Response({'error': {'code': 'creator_not_active', 'message': 'Creator account must be active to submit bids'}}, status=status.HTTP_403_FORBIDDEN)
+
+        # 2. Campaign must exist and not be soft deleted
         camp = Campaign.objects.filter(id=pk, deleted_at__isnull=True).first()
         if not camp:
             return Response({'error': {'code': 'campaign_not_found', 'message': 'Campaign not found'}}, status=status.HTTP_404_NOT_FOUND)
 
+        # 3. Campaign status must be open_for_bids
         if camp.status != 'open_for_bids':
-            return Response({'error': {'code': 'conflict', 'message': 'Campaign is not open for bids'}}, status=status.HTTP_409_CONFLICT)
+            return Response({'error': {'code': 'conflict', 'message': f'Campaign is not open for bids (status: {camp.status})'}}, status=status.HTTP_409_CONFLICT)
+
+        # 4. applyBy must be in the future (fail closed if unparseable)
+        if camp.apply_by:
+            try:
+                apply_str = camp.apply_by.replace('Z', '+00:00')
+                apply_dt = datetime.fromisoformat(apply_str)
+                if django_tz.is_naive(apply_dt):
+                    apply_dt = django_tz.make_aware(apply_dt, timezone.utc)
+                if apply_dt <= django_tz.now():
+                    return Response({'error': {'code': 'conflict', 'message': 'Campaign applyBy deadline has passed'}}, status=status.HTTP_409_CONFLICT)
+            except Exception:
+                return Response({'error': {'code': 'conflict', 'message': 'Campaign deadline is invalid or cannot be verified'}}, status=status.HTTP_409_CONFLICT)
 
         body = request.data or {}
         price = body.get('price')
         note = body.get('note', '')
 
-        if not isinstance(price, int) or price <= 0:
-            return Response({'error': {'code': 'validation_error', 'message': 'Valid positive price required'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        # 5. Price an integer >= 1
+        if not isinstance(price, int) or isinstance(price, bool) or price < 1:
+            return Response({'error': {'code': 'validation_error', 'message': 'Price must be an integer >= 1'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
+        # 6. Price within budget_min and budget_max
+        if (camp.budget_min is not None and price < camp.budget_min) or (camp.budget_max is not None and price > camp.budget_max):
+            return Response({'error': {'code': 'validation_error', 'message': f'Price must be between {camp.budget_min} and {camp.budget_max}'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # 7. Creator identity strictly from authenticated user (no auto-creation with invented stats)
         creator = Creator.objects.filter(id=str(request.user.id)).first()
         if not creator:
             cp = CreatorProfile.objects.filter(user_id=request.user.id).first()
             if cp and cp.slug:
                 creator = Creator.objects.filter(id=cp.slug).first()
         if not creator:
-            profile = Profile.objects.filter(id=request.user.id).first()
-            creator_name = profile.name if (profile and profile.name) else 'Creator'
-            creator = Creator.objects.create(
-                id=str(request.user.id),
-                name=creator_name,
-                category='Lifestyle',
-                location='India',
-                city='Bengaluru',
-                followers='10k',
-                follower_count=10000,
-                platform='Instagram',
-                rating=5.0,
-                review_count=0,
-                price_from=price,
-                deliverable=camp.deliverables or '1 Post',
-                image='https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-                top_creator=False,
-                replies_within='24 hours',
-                is_seed=False,
-                status='active',
+            return Response({'error': {'code': 'creator_not_listed', 'message': 'Creator profile is not listed in catalog'}}, status=status.HTTP_403_FORBIDDEN)
+
+        if creator.status != 'active':
+            return Response({'error': {'code': 'creator_not_active', 'message': 'Creator listing is not active'}}, status=status.HTTP_403_FORBIDDEN)
+
+        # 8. One bid per creator per campaign (unique check plus DB unique index)
+        if CampaignBid.objects.filter(campaign_id=pk, creator=creator).exists():
+            return Response({'error': {'code': 'conflict', 'message': 'Creator has already submitted a bid for this campaign'}}, status=status.HTTP_409_CONFLICT)
+
+        try:
+            bid = CampaignBid.objects.create(
+                id=uuid.uuid4(),
+                campaign=camp,
+                creator=creator,
+                price=price,
+                note=note or None,
+                status='submitted',
                 created_at=django_tz.now(),
                 updated_at=django_tz.now(),
             )
-
-        bid = CampaignBid.objects.create(
-            id=uuid.uuid4(),
-            campaign=camp,
-            creator=creator,
-            price=price,
-            note=note or None,
-            status='submitted',
-            created_at=django_tz.now(),
-            updated_at=django_tz.now(),
-        )
+        except IntegrityError:
+            return Response({'error': {'code': 'conflict', 'message': 'Creator has already submitted a bid for this campaign'}}, status=status.HTTP_409_CONFLICT)
 
         return Response({
             'id': str(bid.id),
@@ -323,64 +337,40 @@ class CampaignBidSelectView(APIView):
     def post(self, request, pk, bid_id):
         if not is_valid_uuid(pk) or not is_valid_uuid(bid_id):
             return Response({'error': {'code': 'campaign_not_found', 'message': 'Campaign not found'}}, status=status.HTTP_404_NOT_FOUND)
-        # 1. Lock campaign row for update
-        camp = Campaign.objects.select_for_update().filter(id=pk, deleted_at__isnull=True).first()
-        if not camp or (str(camp.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
-            return Response({'error': {'code': 'campaign_not_found', 'message': 'Campaign not found'}}, status=status.HTTP_404_NOT_FOUND)
 
-        # 2. Check campaign status
-        if camp.status not in ['open_for_bids', 'closed']:
-            return Response({'error': {'code': 'conflict', 'message': f"Campaign is not open for selection (status: {camp.status})"}}, status=status.HTTP_409_CONFLICT)
-
-        # 3. Lock bid row for update
-        bid = CampaignBid.objects.select_for_update().filter(id=bid_id, campaign_id=pk).first()
-        if not bid:
-            return Response({'error': {'code': 'bid_not_found', 'message': 'Bid not found'}}, status=status.HTTP_404_NOT_FOUND)
-
-        if bid.status not in ['submitted', 'shortlisted']:
-            return Response({'error': {'code': 'conflict', 'message': f"Bid is not eligible for selection (status: {bid.status})"}}, status=status.HTTP_409_CONFLICT)
-
-        # 4. Create Order in awaiting_payment
-        now = django_tz.now()
-        order = Order.objects.create(
-            id=uuid.uuid4(),
-            brand=camp.brand,
-            creator=bid.creator,
-            campaign=camp,
-            bid=bid,
-            deliverable=camp.deliverables or 'Deliverables',
-            amount=bid.price,
-            status='awaiting_payment',
-            revision_count=0,
-            created_at=now,
-            updated_at=now,
-        )
-
-        # 5. Update campaign status to awarded
-        camp.status = 'awarded'
-        camp.updated_at = now
-        camp.save()
-
-        # 6. Update winning bid to selected
-        bid.status = 'selected'
-        bid.updated_at = now
-        bid.save()
-
-        # 7. Update rival bids to rejected
-        CampaignBid.objects.filter(campaign_id=pk, status__in=['submitted', 'shortlisted']).exclude(id=bid.id).update(status='rejected', updated_at=now)
-
-        return Response({
-            'order': {
-                'id': str(order.id),
-                'brandId': str(order.brand_id),
-                'creatorId': str(order.creator_id),
-                'campaignId': str(order.campaign_id),
-                'bidId': str(order.bid_id),
-                'deliverable': order.deliverable,
-                'amount': order.amount,
-                'status': order.status,
-                'createdAt': order.created_at.isoformat(),
-            },
-            'campaignId': str(camp.id),
-            'selectedBidId': str(bid.id),
-        }, status=status.HTTP_201_CREATED)
+        with connection.cursor() as cursor:
+            try:
+                cursor.execute(
+                    "SELECT id, brand_id, creator_id, campaign_id, bid_id, deliverable, amount, status, created_at FROM public.select_bid(%s::uuid, %s::uuid, %s::uuid);",
+                    [pk, bid_id, request.user.id]
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return Response({'error': {'code': 'campaign_not_found', 'message': 'Campaign not found'}}, status=status.HTTP_404_NOT_FOUND)
+                order_id, b_id, c_id, camp_id, s_bid_id, deliverable, amount, order_status, created_at = row
+                return Response({
+                    'order': {
+                        'id': str(order_id),
+                        'brandId': str(b_id),
+                        'creatorId': str(c_id),
+                        'campaignId': str(camp_id),
+                        'bidId': str(s_bid_id),
+                        'deliverable': deliverable,
+                        'amount': amount,
+                        'status': order_status,
+                        'createdAt': created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at),
+                    },
+                    'campaignId': str(camp_id),
+                    'selectedBidId': str(s_bid_id),
+                }, status=status.HTTP_201_CREATED)
+            except DatabaseError as e:
+                err_msg = str(e)
+                if 'P0002' in err_msg or ('not found' in err_msg.lower() and 'bid' not in err_msg.lower()):
+                    return Response({'error': {'code': 'campaign_not_found', 'message': 'Campaign not found'}}, status=status.HTTP_404_NOT_FOUND)
+                if 'P0003' in err_msg or 'Unauthorized' in err_msg:
+                    return Response({'error': {'code': 'campaign_not_found', 'message': 'Campaign not found'}}, status=status.HTTP_404_NOT_FOUND)
+                if 'P0005' in err_msg:
+                    return Response({'error': {'code': 'bid_not_found', 'message': 'Bid not found'}}, status=status.HTTP_404_NOT_FOUND)
+                if 'P0004' in err_msg or 'P0006' in err_msg or 'conflict' in err_msg.lower() or 'status' in err_msg.lower() or 'eligible' in err_msg.lower():
+                    return Response({'error': {'code': 'conflict', 'message': err_msg.split('\n')[0].replace('CONTEXT:', '').strip()}}, status=status.HTTP_409_CONFLICT)
+                return Response({'error': {'code': 'conflict', 'message': err_msg.split('\n')[0].strip()}}, status=status.HTTP_409_CONFLICT)
