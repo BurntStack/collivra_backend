@@ -47,7 +47,7 @@ The application backend runs as a standalone **Django (Python / Django REST Fram
 
 ### Core Architecture Components
 
-- **Backend Framework:** Django 6.1.2 + Django REST Framework (`backend/api/`) deployed via Gunicorn on Render (`render.yaml`).
+- **Backend Framework:** Django 6.1.2 + Django REST Framework (`api/`, `config/`) deployed via Gunicorn on Render (`render.yaml`).
 - **Database Engine & Pooler:** PostgreSQL 15 connected through Supabase AWS transaction pooler (`aws-0-ap-south-1.pooler.supabase.com:6543`) with `DISABLE_SERVER_SIDE_CURSORS = True` for PgBouncer transaction mode safety.
 - **Database Access Lockdown:** Direct database access for `anon` and `authenticated` roles via PostgREST is revoked (returns 403). All database interactions are routed through Django.
 - **Authentication Bridge:** `api.authentication.SupabaseAuthentication` verifies GoTrue JWTs via `SUPABASE_JWT_SECRET` with fallback to Supabase `/auth/v1/user`, mapping claims to `request.user.id` and `request.user.role`.
@@ -62,7 +62,7 @@ The application backend runs as a standalone **Django (Python / Django REST Fram
 2. **Creators Require Admin Approval**: Creators sign up with status `unverified`. They complete profile onboarding, KYC document upload, PAN, and bank details, then submit for review (`POST /creator/onboarding/submit`), transitioning to status `pending`. Until an administrator approves their application (`POST /admin/verifications/:id/approve`), creators cannot participate in marketplace activities. Any attempt to bid or access packages returns `403` with `{ code: "creator_not_approved" }`.
 3. **Single Admin Database & Backend Enforcement**: Admin privileges are strictly locked to `socials@burntstack.com` at the PostgreSQL trigger level (`tr_enforce_single_admin`) and Django layer (`IsAdminUser`). The trigger rejects any INSERT or UPDATE assigning the admin or super_admin role to any other email address.
 4. **Status and Role Protection (No Mass Assignment)**: Roles and statuses are never read from user-editable metadata after an account exists. The `handle_new_user` trigger enforces status on INSERT and only promotes to admin from `raw_app_meta_data`. No endpoint accepts `role` or `status` in request bodies (returns `422 validation_error`). Direct Supabase Auth `updateUser` calls changing `user_metadata` have zero effect on `public.profiles`.
-5. **Schema Ownership belongs to Supabase Migrations**: The database schema is strictly owned and tracked by `supabase/migrations/*.sql`. All Django models in `backend/api/models.py` define `managed = False` in their `Meta`.
+5. **Schema Ownership belongs to Supabase Migrations**: The database schema is strictly owned and tracked by `supabase/migrations/*.sql`. All Django models in `api/models.py` define `managed = False` in their `Meta`.
 6. **The Brand Spec Wins for Brand Endpoints**: The latest "API Specification — Creator Marketplace (Brand side)" takes absolute precedence for all brand-facing routes.
 7. **"Users" Means Brands**: Across Figma, frontend specs, and marketplace terminology, user-facing client accounts are brands. Creators are hired partners.
 8. **Responses are Supersets of Both Specs**: Endpoints return supersets of both the Brand Spec and Page-by-Page spec so both web and mobile frontends function seamlessly without translation layers.
@@ -262,7 +262,7 @@ All 21 database migrations are tracked in `supabase/migrations/` and applied to 
 
 ### Django Models (All `managed = False`)
 
-All 25 models in `backend/api/models.py` map directly to tables created by Supabase SQL migrations without Django creating or managing tables:
+All 25 models in `api/models.py` map directly to tables created by Supabase SQL migrations without Django creating or managing tables:
 
 - `AuditLog` (`audit_log`)
 - `BrandProfiles` (`brand_profiles`)

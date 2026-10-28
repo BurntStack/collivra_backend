@@ -6,7 +6,7 @@ from decouple import AutoConfig
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from backend/.env or system environment
+# Load environment variables from .env or system environment
 config = AutoConfig(search_path=str(BASE_DIR))
 
 SECRET_KEY = config('DJANGO_SECRET_KEY', default='django-insecure-collivra-backend-secret-key-1234567890')
@@ -67,7 +67,7 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.onrender\.com$",
 ]
 
-ROOT_URLCONF = 'collivra_backend.urls'
+ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [
     {
@@ -84,7 +84,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'collivra_backend.wsgi.application'
+WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database configuration connecting via Supabase Transaction Pooler (port 6543)
 DATABASE_URL = config('DATABASE_URL', default='sqlite:///:memory:')
