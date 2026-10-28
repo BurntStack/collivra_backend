@@ -1,19 +1,18 @@
 # Collivra Test Suite
 
-This directory contains integration test suites for the Collivra Edge Function API (`/api/v1`).
+This directory contains integration test suites for the Collivra Django REST API (`/api/v1`).
 
 ## Target Environment
 
-The test scripts default to the deployed remote Supabase Edge Function environment:
-`https://eetmsobqxlbsvcoscjnb.supabase.co/functions/v1/api/v1`
-
-To target a local development server or staging environment, override the `COLLIVRA_BASE_URL` environment variable.
+The test suites test against the Django application backend:
+- Local default: `http://127.0.0.1:8000/api/v1`
+- Remote / staging: Configurable via `COLLIVRA_BASE_URL`
 
 ## Environment Variables (Names Only)
 
 The following environment variables may be configured when running the test suites:
 
-- `COLLIVRA_BASE_URL`: Base URL for the Edge Function API (e.g. `http://localhost:54321/functions/v1/api/v1` or remote URL). Defaults to the remote deployed instance.
+- `COLLIVRA_BASE_URL`: Base URL for the API (e.g. `http://127.0.0.1:8000/api/v1`).
 - `COLLIVRA_TEST_PASSWORD`: Password used when generating disposable test brand accounts.
 - `COLLIVRA_CREATOR_MOBILE`: Mobile number of an existing seeded/test creator for onboarding and creator-role gating tests.
 - `COLLIVRA_CREATOR_PASSWORD`: Password for the test creator account.
@@ -25,12 +24,14 @@ The following environment variables may be configured when running the test suit
 | Script | Area | Description |
 |--------|------|-------------|
 | `tests/auth.sh` | Brand Auth & OAuth | Brand signup, login, session inspection (`/auth/me`), Google OAuth (`/auth/oauth/google`), Apple OAuth (`/auth/oauth/apple`), and logout (`/auth/logout`). |
+| `tests/creator_auth.sh` | Creator Auth Lifecycle | Creator signup (terms acceptance), OTP verification, login, failed login lockout (5 attempts -> 423), forgot-password, reset-password, change-password, and logout. |
 | `tests/onboarding.sh` | Creator Onboarding & KYC | Creator mobile login, presigned upload URLs, KYC ID/PAN validation, bank details, social connect stub, and onboarding submission. |
 | `tests/marketplace.sh` | Discovery & Route Gating | Public endpoints (`/creators`, `/creators/suggestions`, `/creators/filters`), route gating verification (401 unauthenticated, 403 creator token), and brand access to creator details and shortlists. |
 | `tests/cart.sh` | Cart & Custom Offers | Cart inspection, item additions, quantity updates, item deletions, and custom brand offer submissions. |
 | `tests/campaigns.sh` | Campaigns & Bids | Campaign creation, B2 edit rules (validation, field locking when bids exist, owner 404), B2 delete rules (409 conflict when bids exist, 204 soft delete for drafts), bid submission, and bid selection. |
 | `tests/orders.sh` | Orders & Escrow | Order creation, order listing and details, escrow funding (`/pay`), revision requests (`/request-changes`), deliverable approval (`/approve`), and idempotency. |
 | `tests/dashboard.sh` | Dashboard & Content Library | Brand dashboard overview, onboarding todo completion, custom brand shortlists, and deliverable content library. |
+| `tests/security.sh` | Security & Isolation | Cross-brand isolation (Brand A vs B returns 404), creator route gating (403), unauth (401), direct PostgREST lockdown (403), cart quantity validation (422), order state transition conflicts (409), revision limit (409), and admin draft submission. |
 
 ## Running the Tests
 
@@ -41,12 +42,14 @@ chmod +x tests/*.sh
 
 # Run individual test suites
 ./tests/auth.sh
+./tests/creator_auth.sh
 ./tests/onboarding.sh
 ./tests/marketplace.sh
 ./tests/cart.sh
 ./tests/campaigns.sh
 ./tests/orders.sh
 ./tests/dashboard.sh
+./tests/security.sh
 ```
 
 Or run all test suites in sequence:

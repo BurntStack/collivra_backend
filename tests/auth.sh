@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-BASE_URL="${COLLIVRA_BASE_URL:-https://eetmsobqxlbsvcoscjnb.supabase.co/functions/v1/api/v1}"
+BASE_URL="${COLLIVRA_BASE_URL:-http://127.0.0.1:8000/api/v1}"
 TEST_PASSWORD="${COLLIVRA_TEST_PASSWORD:-password123}"
 
 echo "=== 1. Brand Signup: POST /auth/signup ==="

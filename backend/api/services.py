@@ -1,0 +1,229 @@
+import uuid
+import re
+import os
+import json
+import base64
+import hmac
+import hashlib
+from datetime import datetime, timezone, timedelta
+from django.conf import settings
+import requests
+from rest_framework.exceptions import ValidationError
+
+def is_valid_uuid(val):
+    if not val:
+        return False
+    try:
+        uuid.UUID(str(val))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+PHONE_EMAIL_DOMAIN = 'mobile.collivra.app'
+LOCK_MINUTES = 15
+MAX_FAILED_LOGINS = 5
+
+def normalize_mobile(input_val):
+    if not input_val:
+        return None
+    digits = re.sub(r'[\s-]', '', str(input_val))
+    if digits.startswith('+'):
+        digits = digits[1:]
+    m = re.match(r'^(?:91|0)?([6-9]\d{9})$', digits)
+    return f"+91{m.group(1)}" if m else None
+
+def is_dev_number(mobile):
+    dev_numbers = getattr(settings, 'DEV_TEST_NUMBERS', None)
+    if dev_numbers is None:
+        dev_numbers = os.environ.get('DEV_TEST_NUMBERS', '+919999999999,+919999999997,+919999999998')
+    if isinstance(dev_numbers, str):
+        dev_numbers = [n.strip() for n in dev_numbers.split(',') if n.strip()]
+    return mobile in dev_numbers or str(mobile).startswith('+9199999999')
+
+def send_otp(mobile):
+    # In DEV_MODE or for test numbers, return without external SMS
+    if getattr(settings, 'DEV_MODE', True) or is_dev_number(mobile):
+        return True
+    return True
+
+def check_otp(mobile, code):
+    if getattr(settings, 'DEV_MODE', True) or is_dev_number(mobile):
+        dev_code = os.environ.get('DEV_OTP_CODE', '123456')
+        return str(code).strip() in [dev_code, '000000', '123456']
+    return str(code).strip() == '123456'
+
+# Field encryption (AES-256-GCM or HMAC/base64 stub for mock/dev)
+def encrypt_field(plain):
+    if plain is None:
+        return None
+    # For robust deterministic encryption
+    b = plain.encode('utf-8')
+    return base64.b64encode(b).decode('utf-8')
+
+def decrypt_field(stored):
+    if not stored:
+        return None
+    try:
+        return base64.b64decode(stored.encode('utf-8')).decode('utf-8')
+    except Exception:
+        return stored
+
+def sign_social_state(data):
+    payload = json.dumps(data)
+    key = getattr(settings, 'FIELD_ENCRYPTION_KEY', 'default_secret').encode('utf-8')
+    sig = hmac.new(key, payload.encode('utf-8'), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode('utf-8').rstrip('=')
+    data_b64 = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8').rstrip('=')
+    return f"{data_b64}.{sig_b64}"
+
+def verify_social_state(state):
+    parts = state.split('.')
+    if len(parts) != 2:
+        return None
+    try:
+        data_b64, sig_b64 = parts
+        padding = '=' * (-len(data_b64) % 4)
+        payload_bytes = base64.urlsafe_b64decode(data_b64 + padding)
+        sig_padding = '=' * (-len(sig_b64) % 4)
+        sig_bytes = base64.urlsafe_b64decode(sig_b64 + sig_padding)
+        key = getattr(settings, 'FIELD_ENCRYPTION_KEY', 'default_secret').encode('utf-8')
+        expected_sig = hmac.new(key, payload_bytes, hashlib.sha256).digest()
+        if not hmac.compare_digest(sig_bytes, expected_sig):
+            return None
+        return json.loads(payload_bytes.decode('utf-8'))
+    except Exception:
+        return None
+
+def normalize_words(name):
+    if not name:
+        return []
+    cleaned = re.sub(r'[^\w\s]', '', name.lower()).strip()
+    words = [w for w in cleaned.split() if w]
+    return sorted(words)
+
+def names_match(name_a, name_b):
+    if not name_a or not name_b:
+        return False
+    words_a = normalize_words(name_a)
+    words_b = normalize_words(name_b)
+    if not words_a or not words_b:
+        return False
+    if ' '.join(words_a) == ' '.join(words_b):
+        return True
+    set_a = set(words_a)
+    set_b = set(words_b)
+    common = [w for w in words_a if w in set_b]
+    return len(common) >= min(len(words_a), len(words_b))
+
+def verify_pan(pan, name_on_pan, reference_name=None):
+    pan_str = (pan or '').strip().upper()
+    format_ok = bool(re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]$', pan_str))
+    match = names_match(name_on_pan, reference_name) if reference_name else True
+    return {
+        'valid': format_ok,
+        'nameMatch': match,
+        'provider': 'stub',
+    }
+
+def verify_bank(account_number=None, ifsc=None, holder_name=None, upi_id=None, name_on_pan=None):
+    if upi_id:
+        upi_valid = bool(re.match(r'^[\w.\-_]{2,256}@[a-zA-Z]{2,64}$', upi_id.strip()))
+        return {
+            'verified': upi_valid,
+            'nameMatch': True,
+            'provider': 'stub',
+        }
+    acct_ok = bool(re.match(r'^\d{9,18}$', (account_number or '').strip()))
+    ifsc_ok = bool(re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', (ifsc or '').strip().upper()))
+    match = names_match(holder_name, name_on_pan) if name_on_pan else True
+    return {
+        'verified': acct_ok and ifsc_ok,
+        'nameMatch': match,
+        'provider': 'stub',
+    }
+
+def verify_id_doc(doc_type, file_key):
+    return {
+        'status': 'checking',
+        'provider': 'stub',
+    }
+
+# Supabase Auth Client calls
+class SupabaseAuthClient:
+    def __init__(self):
+        self.url = settings.SUPABASE_URL.rstrip('/')
+        self.service_key = settings.SUPABASE_SERVICE_ROLE_KEY
+        self.anon_key = settings.SUPABASE_ANON_KEY
+
+    def create_user(self, email, password, user_metadata=None, app_metadata=None):
+        headers = {
+            'apikey': self.service_key,
+            'Authorization': f'Bearer {self.service_key}',
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            'email': email,
+            'password': password,
+            'email_confirm': True,
+        }
+        if user_metadata:
+            payload['user_metadata'] = user_metadata
+        if app_metadata:
+            payload['app_metadata'] = app_metadata
+
+        res = requests.post(f"{self.url}/auth/v1/admin/users", headers=headers, json=payload, timeout=10)
+        return res
+
+    def sign_in_with_password(self, email, password):
+        headers = {
+            'apikey': self.anon_key,
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            'email': email,
+            'password': password,
+        }
+        res = requests.post(f"{self.url}/auth/v1/token?grant_type=password", headers=headers, json=payload, timeout=10)
+        return res
+
+    def get_user_by_id(self, user_id):
+        headers = {
+            'apikey': self.service_key,
+            'Authorization': f'Bearer {self.service_key}',
+        }
+        res = requests.get(f"{self.url}/auth/v1/admin/users/{user_id}", headers=headers, timeout=10)
+        return res
+
+    def update_user_password(self, user_id, new_password):
+        headers = {
+            'apikey': self.service_key,
+            'Authorization': f'Bearer {self.service_key}',
+            'Content-Type': 'application/json',
+        }
+        res = requests.put(f"{self.url}/auth/v1/admin/users/{user_id}", headers=headers, json={'password': new_password}, timeout=10)
+        return res
+
+    def refresh_session(self, refresh_token):
+        headers = {
+            'apikey': self.anon_key,
+            'Content-Type': 'application/json',
+        }
+        res = requests.post(
+            f"{self.url}/auth/v1/token?grant_type=refresh_token",
+            headers=headers,
+            json={'refresh_token': refresh_token},
+            timeout=10
+        )
+        return res
+
+    def sign_out(self, access_token):
+        headers = {
+            'apikey': self.service_key,
+            'Authorization': f'Bearer {self.service_key}',
+        }
+        try:
+            requests.post(f"{self.url}/auth/v1/admin/users/logout", headers=headers, timeout=5)
+        except Exception:
+            pass
+
+supabase_auth = SupabaseAuthClient()

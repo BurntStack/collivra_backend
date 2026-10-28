@@ -1,17 +1,21 @@
 # Collivra — Project Status
 
-> **Maintained by:** Antigravity Backend Agent. Updated automatically after every change to migrations, edge functions, configs, endpoints, or contracts. Never write secrets or raw keys in this file. Detailed endpoint schemas and payload examples are documented in [API_REFERENCE.md](file:///Users/srikarnagavelli/Srikar/Burntstack/collivra/docs/API_REFERENCE.md).
+> **Maintained by:** Antigravity Backend Agent. Updated automatically after every change to migrations, backend services, configs, endpoints, or contracts. Never write secrets or raw keys in this file. Detailed endpoint schemas and payload examples are documented in [API_REFERENCE.md](file:///Users/srikarnagavelli/Srikar/Burntstack/collivra/docs/API_REFERENCE.md).
 
 ---
 
-## 1. What This Is
+## 1. Architecture Overview
 
 Collivra is an India-focused marketplace where brands discover and hire content creators. A brand posts a campaign or hires directly from creator packages; platform escrow protects funds until deliverables are approved.
 
-The entire backend runs on **Supabase** (Postgres + Storage + GoTrue Auth) with a single TypeScript Edge Function (`api`) served under `/api/v1` using **Hono**.
+The backend has migrated to **Django (Python / Django REST Framework)** while retaining **Supabase** solely as managed PostgreSQL, Storage, and GoTrue Auth:
 
-- **Remote API URL:** `https://eetmsobqxlbsvcoscjnb.supabase.co/functions/v1/api/v1`
-- **Linked Project Ref:** `eetmsobqxlbsvcoscjnb`
+- **Backend Framework:** Django 6.1.2 + Django REST Framework (`backend/api/`)
+- **Database Connection:** Supabase PostgreSQL AWS pooler via `dj-database-url` on port 6543 (`DISABLE_SERVER_SIDE_CURSORS = True` for PgBouncer compatibility)
+- **Database Access Model:** Direct database access for `anon` and `authenticated` roles via PostgREST is locked down (403). All application queries flow through Django using backend service credentials.
+- **Authentication Bridge:** `SupabaseAuthentication` verifies GoTrue JWTs via `SUPABASE_JWT_SECRET` with fallback to Supabase `/auth/v1/user`, mapping claims to `request.user.id` and `request.user.role`.
+- **API Base URL:** `http://127.0.0.1:8000/api/v1` (local) / configurable via `COLLIVRA_BASE_URL`
+- **Linked Supabase Project:** `eetmsobqxlbsvcoscjnb`
 
 ---
 

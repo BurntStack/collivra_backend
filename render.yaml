@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: collivra-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: singapore
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --no-input"
+    startCommand: "gunicorn collivra_backend.wsgi:application"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.7
+      - key: DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: DEV_MODE
+        value: "true"
+      - key: SHOW_SEED_DATA
+        value: "true"

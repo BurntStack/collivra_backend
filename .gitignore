@@ -1,0 +1,51 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python virtual environments
+.venv/
+venv/
+ENV/
+env/
+*.venv
+
+# Environment & Secrets (NEVER COMMIT SECRETS)
+.env
+.env.*
+!.env.example
+*.local
+
+# macOS & OS artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor & IDE artifacts
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# Django specific
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+backend/staticfiles/
+
+# Supabase temp & local cache
+.temp/
+supabase/.temp/
+
+# Node artifacts
+node_modules/
