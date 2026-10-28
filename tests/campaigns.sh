@@ -113,9 +113,21 @@ echo "Valid edit before bids OK (200)"
 
 echo ""
 echo "=== 5. Submit Bids to Campaign ==="
-BID1_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$BASE_URL/campaigns/$CAMP_ID/bids" \
+CREATOR_LOGIN=$(curl -s -X POST "$BASE_URL/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"creatorId":"ananya-rao","price":18000,"note":"Excited to partner on this launch!"}')
+  -d '{"identifier":"+919999999999","password":"changedpass123"}')
+CREATOR_TOKEN=$(echo "$CREATOR_LOGIN" | jq -r '.accessToken // empty')
+if [ -z "$CREATOR_TOKEN" ]; then
+  CREATOR_LOGIN=$(curl -s -X POST "$BASE_URL/auth/login" \
+    -H "Content-Type: application/json" \
+    -d '{"identifier":"+919999999998","password":"changedpass123"}')
+  CREATOR_TOKEN=$(echo "$CREATOR_LOGIN" | jq -r '.accessToken // empty')
+fi
+
+BID1_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$BASE_URL/campaigns/$CAMP_ID/bids" \
+  -H "Authorization: Bearer $CREATOR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"price":18000,"note":"Excited to partner on this launch!"}')
 STATUS=$(echo "$BID1_RES" | tail -n1 | cut -d: -f2)
 BODY=$(echo "$BID1_RES" | sed '$d')
 if [ "$STATUS" != "201" ]; then

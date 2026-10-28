@@ -7,8 +7,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from ..models import Campaign, CampaignBid, Order, Creator, Profile
-from ..permissions import IsBrandUser
+from ..models import Campaign, CampaignBid, Order, Creator, Profile, CreatorProfile
+from ..permissions import IsBrandUser, IsCreatorUser
 from ..services import is_valid_uuid
 
 class CampaignListCreateView(APIView):
@@ -223,7 +223,9 @@ class CampaignBidsView(APIView):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [IsBrandUser()]
-        return [AllowAny()]
+        elif self.request.method == 'POST':
+            return [IsCreatorUser()]
+        return [IsBrandUser()]
 
     def get(self, request, pk):
         if not is_valid_uuid(pk):
@@ -257,16 +259,41 @@ class CampaignBidsView(APIView):
             return Response({'error': {'code': 'conflict', 'message': 'Campaign is not open for bids'}}, status=status.HTTP_409_CONFLICT)
 
         body = request.data or {}
-        creator_id = body.get('creatorId')
         price = body.get('price')
         note = body.get('note', '')
 
-        if not creator_id or not isinstance(price, int) or price <= 0:
-            return Response({'error': {'code': 'validation_error', 'message': 'Valid creatorId and positive price required'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if not isinstance(price, int) or price <= 0:
+            return Response({'error': {'code': 'validation_error', 'message': 'Valid positive price required'}}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
-        creator = Creator.objects.filter(id=creator_id).first()
+        creator = Creator.objects.filter(id=str(request.user.id)).first()
         if not creator:
-            return Response({'error': {'code': 'creator_not_found', 'message': 'Creator not found'}}, status=status.HTTP_404_NOT_FOUND)
+            cp = CreatorProfile.objects.filter(user_id=request.user.id).first()
+            if cp and cp.slug:
+                creator = Creator.objects.filter(id=cp.slug).first()
+        if not creator:
+            profile = Profile.objects.filter(id=request.user.id).first()
+            creator_name = profile.name if (profile and profile.name) else 'Creator'
+            creator = Creator.objects.create(
+                id=str(request.user.id),
+                name=creator_name,
+                category='Lifestyle',
+                location='India',
+                city='Bengaluru',
+                followers='10k',
+                follower_count=10000,
+                platform='Instagram',
+                rating=5.0,
+                review_count=0,
+                price_from=price,
+                deliverable=camp.deliverables or '1 Post',
+                image='https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+                top_creator=False,
+                replies_within='24 hours',
+                is_seed=False,
+                status='active',
+                created_at=django_tz.now(),
+                updated_at=django_tz.now(),
+            )
 
         bid = CampaignBid.objects.create(
             id=uuid.uuid4(),

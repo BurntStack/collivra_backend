@@ -6,7 +6,7 @@ from django.utils import timezone as django_tz
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from ..models import (
     Upload, CreatorProfile, CreatorKyc, SocialAccount,
@@ -131,7 +131,7 @@ class SocialConnectUrlView(APIView):
         return Response({'url': callback_url})
 
 class SocialCallbackView(APIView):
-    permission_classes = [status_permissions.AllowAny] if 'status_permissions' in globals() else []
+    permission_classes = [AllowAny]
     # No auth header required because authentication is in the verified state token
     authentication_classes = []
 

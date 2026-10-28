@@ -1,4 +1,3 @@
-from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
 
@@ -20,6 +19,8 @@ def root_health_view(request):
 
 urlpatterns = [
     path('', root_health_view, name='root-health'),
-    path('admin/', admin.site.urls),
     path('api/v1/', include('api.urls')),
 ]
+
+handler404 = 'api.errors.error_404_handler'
+handler500 = 'api.errors.error_500_handler'
