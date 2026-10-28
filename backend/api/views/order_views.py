@@ -8,8 +8,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
 from ..models import Order, OrderMessage, Creator, CreatorPackage, Profile
-from ..permissions import IsBrandUser
+from ..permissions import IsBrandUser, IsActiveCreator, IsMarketplaceParticipant, is_valid_admin
 from ..services import is_valid_uuid
+
 from .marketplace_views import format_creator_card
 
 def format_order(o):
@@ -79,16 +80,23 @@ class OrderListCreateView(APIView):
         return Response(format_order(order), status=status.HTTP_201_CREATED)
 
 class OrderDetailView(APIView):
-    permission_classes = [IsBrandUser]
+    permission_classes = [IsMarketplaceParticipant]
 
     def get(self, request, pk):
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
         order = Order.objects.filter(id=pk).select_related('creator').first()
-        if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
+        if not order:
+            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
+        if (
+            str(order.brand_id) != str(request.user.id)
+            and str(order.creator_id) != str(request.user.id)
+            and not is_valid_admin(request.user)
+        ):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         return Response(format_order(order))
+
 
 class OrderPayView(APIView):
     permission_classes = [IsBrandUser]
@@ -149,14 +157,9 @@ class OrderConfirmStubView(APIView):
             return Response(format_order(order))
 
 class OrderSubmitDraftView(APIView):
+    permission_classes = [IsActiveCreator]
+
     def post(self, request, pk):
-        if not request.user or not request.user.is_authenticated:
-            return Response({'error': {'code': 'unauthorized', 'message': 'Please sign in'}}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Role check: draft submission restricted to admin or creator
-        if getattr(request.user, 'role', '') not in ['admin', 'super_admin']:
-            return Response({'error': {'code': 'forbidden', 'message': 'Draft submission restricted to admin role'}}, status=status.HTTP_403_FORBIDDEN)
-
         if not is_valid_uuid(pk):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
@@ -164,6 +167,10 @@ class OrderSubmitDraftView(APIView):
             order = Order.objects.select_for_update().filter(id=pk).select_related('creator').first()
             if not order:
                 return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
+
+            if str(order.creator_id) != str(request.user.id) and not is_valid_admin(request.user):
+                return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
+
 
             if order.status not in ['in_escrow', 'changes_requested']:
                 return Response({'error': {'code': 'invalid_order_state', 'message': f"Draft submission allowed only from in_escrow or changes_requested, current: {order.status}"}}, status=status.HTTP_409_CONFLICT)
@@ -286,11 +293,17 @@ class OrderApproveView(APIView):
             return Response(format_order(order))
 
 class OrderMessagesView(APIView):
-    permission_classes = [IsBrandUser]
+    permission_classes = [IsMarketplaceParticipant]
 
     def get(self, request, pk):
         order = Order.objects.filter(id=pk).first()
-        if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
+        if not order:
+            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
+        if (
+            str(order.brand_id) != str(request.user.id)
+            and str(order.creator_id) != str(request.user.id)
+            and not is_valid_admin(request.user)
+        ):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         messages = OrderMessage.objects.filter(order_id=pk).order_by('created_at')
@@ -308,7 +321,13 @@ class OrderMessagesView(APIView):
 
     def post(self, request, pk):
         order = Order.objects.filter(id=pk).first()
-        if not order or (str(order.brand_id) != str(request.user.id) and getattr(request.user, 'role', '') != 'admin'):
+        if not order:
+            return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
+        if (
+            str(order.brand_id) != str(request.user.id)
+            and str(order.creator_id) != str(request.user.id)
+            and not is_valid_admin(request.user)
+        ):
             return Response({'error': {'code': 'order_not_found', 'message': 'Order not found'}}, status=status.HTTP_404_NOT_FOUND)
 
         body = request.data or {}
@@ -318,16 +337,20 @@ class OrderMessagesView(APIView):
 
         profile = Profile.objects.filter(id=request.user.id).first()
         now = django_tz.now()
+        sender_role = 'creator' if getattr(request.user, 'role', '') == 'creator' else 'brand'
+        sender_name = profile.name if (profile and sender_role == 'creator') else (profile.company_name or profile.name if profile else 'Brand')
+
         msg = OrderMessage.objects.create(
             id=uuid.uuid4(),
             order=order,
             sender=profile,
-            sender_name=profile.company_name or profile.name if profile else 'Brand',
-            sender_role='brand',
+            sender_name=sender_name,
+            sender_role=sender_role,
             message=message_text,
             attachments=body.get('attachments', []),
             created_at=now,
         )
+
 
         return Response({
             'id': str(msg.id),

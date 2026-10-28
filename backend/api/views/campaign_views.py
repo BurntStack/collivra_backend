@@ -8,8 +8,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
 from ..models import Campaign, CampaignBid, Order, Creator, Profile, CreatorProfile
-from ..permissions import IsBrandUser, IsCreatorUser
+from ..permissions import IsBrandUser, IsCreatorUser, IsActiveCreator
 from ..services import is_valid_uuid
+
 
 class CampaignListCreateView(APIView):
     permission_classes = [IsBrandUser]
@@ -224,8 +225,9 @@ class CampaignBidsView(APIView):
         if self.request.method == 'GET':
             return [IsBrandUser()]
         elif self.request.method == 'POST':
-            return [IsCreatorUser()]
+            return [IsActiveCreator()]
         return [IsBrandUser()]
+
 
     def get(self, request, pk):
         if not is_valid_uuid(pk):

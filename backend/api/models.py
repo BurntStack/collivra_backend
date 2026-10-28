@@ -105,7 +105,8 @@ class CreatorKyc(models.Model):
     pan_name_match = models.BooleanField(blank=True, null=True)
     id_doc_type = models.TextField(blank=True, null=True)
     id_file_key = models.TextField(blank=True, null=True)
-    id_status = models.TextField()
+    id_status = models.TextField(default='none')
+
     bank_account_ciphertext = models.TextField(blank=True, null=True)
     bank_account_last4 = models.TextField(blank=True, null=True)
     bank_ifsc = models.TextField(blank=True, null=True)

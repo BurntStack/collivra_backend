@@ -19,7 +19,11 @@ from .views import (
     ShortlistDetailView, ShortlistCreatorManageView, ShortlistDuplicateView,
     DeliverablesListView, DeliverableDetailView, DeliverablesExportView,
     ReportingView, ReportingExportView,
+    AdminVerificationsListView, AdminVerificationDetailView,
+    AdminVerificationApproveView, AdminVerificationRejectView,
+    AdminVerificationRequestInfoView,
 )
+
 
 urlpatterns = [
     # Health check
@@ -96,4 +100,12 @@ urlpatterns = [
     path('deliverables/<str:pk>', DeliverableDetailView.as_view(), name='deliverable-detail'),
     path('reporting', ReportingView.as_view(), name='reporting'),
     path('reporting/export', ReportingExportView.as_view(), name='reporting-export'),
+
+    # Admin Verifications & Approvals
+    path('admin/verifications', AdminVerificationsListView.as_view(), name='admin-verifications-list'),
+    path('admin/verifications/<str:pk>', AdminVerificationDetailView.as_view(), name='admin-verifications-detail'),
+    path('admin/verifications/<str:pk>/approve', AdminVerificationApproveView.as_view(), name='admin-verifications-approve'),
+    path('admin/verifications/<str:pk>/reject', AdminVerificationRejectView.as_view(), name='admin-verifications-reject'),
+    path('admin/verifications/<str:pk>/request-info', AdminVerificationRequestInfoView.as_view(), name='admin-verifications-request-info'),
 ]
+

@@ -37,8 +37,12 @@ class SignupView(APIView):
     def post(self, request):
         body = request.data or {}
 
-        # Brand signup flow
-        if body.get('companyName') or (not body.get('mobile') and body.get('email')):
+        role = body.get('role')
+        if not role:
+            role = 'brand' if body.get('companyName') else ('creator' if body.get('mobile') else 'brand')
+
+        # Email-based signup flow (brand or creator)
+        if body.get('email') and not body.get('mobile'):
             name = (body.get('name') or '').strip()
             email = (body.get('email') or '').strip().lower()
             password = body.get('password') or ''
@@ -51,7 +55,7 @@ class SignupView(APIView):
                 fields['email'] = 'Invalid email address'
             if len(password) < 8:
                 fields['password'] = 'Password must be at least 8 characters'
-            if len(company_name) < 2:
+            if role == 'brand' and len(company_name) < 2:
                 fields['companyName'] = 'Company name must be at least 2 characters'
 
             if fields:
@@ -71,10 +75,14 @@ class SignupView(APIView):
                 }, status=status.HTTP_409_CONFLICT)
 
             # Create in Supabase Auth
+            user_metadata = {'role': role, 'name': name}
+            if company_name:
+                user_metadata['company_name'] = company_name
+
             res = supabase_auth.create_user(
                 email=email,
                 password=password,
-                user_metadata={'role': 'brand', 'name': name, 'company_name': company_name}
+                user_metadata=user_metadata
             )
             if res.status_code != 200 and res.status_code != 201:
                 err_data = res.json() if res.content else {}
@@ -97,9 +105,8 @@ class SignupView(APIView):
             signin_data = signin_res.json()
             token = signin_data.get('access_token')
 
-            # Update Profile company_name
             profile = Profile.objects.filter(id=user_id).first()
-            if profile:
+            if profile and company_name:
                 profile.company_name = company_name
                 profile.save()
 
@@ -109,10 +116,12 @@ class SignupView(APIView):
                     'id': user_id,
                     'name': name,
                     'email': email,
-                    'companyName': company_name,
-                    'role': 'brand',
+                    'companyName': company_name if role == 'brand' else None,
+                    'role': role,
+                    'status': profile.status if profile else ('active' if role == 'brand' else 'unverified'),
                 }
             }, status=status.HTTP_201_CREATED)
+
 
         # Creator / Mobile signup flow
         name = (body.get('name') or '').strip()
@@ -388,6 +397,47 @@ class MeView(APIView):
             'name': profile.name,
             'mobile': profile.mobile,
         })
+
+    def patch(self, request):
+        if not request.user or not request.user.is_authenticated:
+            return Response({'message': 'Please sign in again', 'code': 'unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        body = request.data or {}
+        if 'role' in body or 'status' in body:
+            return Response({
+                'message': 'Role and status cannot be modified via this endpoint',
+                'code': 'validation_error',
+                'error': {
+                    'code': 'validation_error',
+                    'message': 'Role and status cannot be modified via this endpoint',
+                }
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        profile = Profile.objects.filter(id=request.user.id).first()
+        if not profile:
+            return Response({'message': 'Profile not found', 'code': 'not_found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if 'name' in body:
+            profile.name = body['name']
+        if 'companyName' in body and profile.role == 'brand':
+            profile.company_name = body['companyName']
+        profile.save()
+
+        return Response({
+            'user': {
+                'id': str(profile.id),
+                'name': profile.name,
+                'email': profile.email or request.user.email,
+                'companyName': profile.company_name,
+                'role': profile.role,
+            },
+            'id': str(profile.id),
+            'role': profile.role,
+            'status': profile.status,
+            'name': profile.name,
+            'mobile': profile.mobile,
+        })
+
 
 
 class RefreshView(APIView):

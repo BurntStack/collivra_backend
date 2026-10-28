@@ -16,17 +16,18 @@ def get_jwks_client():
 
 class SupabaseUser:
     """Represents an authenticated Supabase user in Django request context."""
-    def __init__(self, user_id, email=None, role=None, raw_claims=None):
+    def __init__(self, user_id, email=None, role=None, status=None, raw_claims=None):
         self.id = str(user_id)
         self.pk = self.id
         self.email = email
         self.role = role or 'brand'
+        self.status = status or 'unverified'
         self.raw_claims = raw_claims or {}
         self.is_authenticated = True
         self.is_anonymous = False
 
     def __str__(self):
-        return f"SupabaseUser({self.id}, role={self.role})"
+        return f"SupabaseUser({self.id}, role={self.role}, status={self.status})"
 
 
 class SupabaseAuthentication(authentication.BaseAuthentication):
@@ -78,18 +79,27 @@ class SupabaseAuthentication(authentication.BaseAuthentication):
             raise exceptions.PermissionDenied(f"Your account is {profile.status}")
 
         role = None
+        user_status = None
         if profile:
             role = profile.role
+            user_status = profile.status
             if not email:
                 email = profile.email
 
         if not role:
             metadata = user_claims.get('user_metadata') or {}
             role = metadata.get('role', 'brand')
+        if not user_status:
+            user_status = 'active' if role == 'brand' else 'unverified'
 
-        # Safeguard: strictly bind admin/super_admin privileges to socials@burntstack.com
-        if role in ['admin', 'super_admin'] and (email or '').strip().lower() != 'socials@burntstack.com':
+        # Safeguard: strictly bind admin/super_admin privileges to socials@burntstack.com (or test_admin in DEBUG)
+        is_allowed_admin = (email or '').strip().lower() == 'socials@burntstack.com' or (
+            getattr(settings, 'DEBUG', False) and (email or '').strip().lower().startswith('test_admin_') and (email or '').strip().lower().endswith('@collivra.test')
+        )
+        if role in ['admin', 'super_admin'] and not is_allowed_admin:
             role = 'brand'
 
-        user = SupabaseUser(user_id=user_id, email=email, role=role, raw_claims=user_claims)
+
+        user = SupabaseUser(user_id=user_id, email=email, role=role, status=user_status, raw_claims=user_claims)
         return (user, token)
+

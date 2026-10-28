@@ -12,14 +12,17 @@ from ..models import (
     Upload, CreatorProfile, CreatorKyc, SocialAccount,
     VerificationRequest, Profile
 )
-from ..permissions import IsCreatorUser
+from ..permissions import IsCreatorOnboarding
 from ..services import (
     encrypt_field, verify_pan, verify_bank, verify_id_doc,
     sign_social_state, verify_social_state
 )
 
 class PresignUploadView(APIView):
+    permission_classes = [IsCreatorOnboarding]
+
     def post(self, request):
+
         if not request.user or not request.user.is_authenticated:
             return Response({'message': 'Please sign in again', 'code': 'unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -80,7 +83,7 @@ class PresignUploadView(APIView):
         return Response({'uploadUrl': upload_url, 'fileKey': file_key})
 
 class CreatorOnboardingProfileView(APIView):
-    permission_classes = [IsCreatorUser]
+    permission_classes = [IsCreatorOnboarding]
 
     def put(self, request):
         profile = Profile.objects.filter(id=request.user.id).first()
@@ -96,6 +99,7 @@ class CreatorOnboardingProfileView(APIView):
         if len(category) < 2 or not languages or len(city) < 2 or not topics:
             return Response({'message': 'Please complete all fields', 'code': 'validation_error'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
+        now = django_tz.now()
         CreatorProfile.objects.update_or_create(
             user=profile,
             defaults={
@@ -103,9 +107,12 @@ class CreatorOnboardingProfileView(APIView):
                 'languages': languages,
                 'city': city,
                 'topics': topics,
-                'updated_at': django_tz.now(),
+                'visibility': {'rates': True, 'audience': True, 'followers': True},
+                'created_at': now,
+                'updated_at': now,
             }
         )
+
 
         return Response({
             'category': category,
@@ -115,7 +122,7 @@ class CreatorOnboardingProfileView(APIView):
         })
 
 class SocialConnectUrlView(APIView):
-    permission_classes = [IsCreatorUser]
+    permission_classes = [IsCreatorOnboarding]
 
     def get(self, request, platform):
         if platform not in ['instagram', 'youtube']:
@@ -198,7 +205,7 @@ class SocialCallbackView(APIView):
         })
 
 class KycIdView(APIView):
-    permission_classes = [IsCreatorUser]
+    permission_classes = [IsCreatorOnboarding]
 
     def post(self, request):
         doc_type = request.data.get('docType')
@@ -229,7 +236,7 @@ class KycIdView(APIView):
         return Response({'status': 'checking'})
 
 class KycPanView(APIView):
-    permission_classes = [IsCreatorUser]
+    permission_classes = [IsCreatorOnboarding]
 
     def post(self, request):
         pan = (request.data.get('pan') or '').strip().upper()
@@ -243,22 +250,28 @@ class KycPanView(APIView):
         profile = Profile.objects.filter(id=request.user.id).first()
         res = verify_pan(pan, name_on_pan, profile.name if profile else None)
 
+        kyc_defaults = {
+            'pan_ciphertext': encrypt_field(pan),
+            'pan_last4': pan[-4:],
+            'name_on_pan': name_on_pan,
+            'pan_valid': res['valid'],
+            'pan_name_match': res['nameMatch'],
+            'provider': res['provider'],
+            'updated_at': django_tz.now(),
+        }
+        existing_kyc = CreatorKyc.objects.filter(user_id=request.user.id).first()
+        if not existing_kyc or not existing_kyc.id_status:
+            kyc_defaults['id_status'] = 'none'
+
         CreatorKyc.objects.update_or_create(
             user=profile,
-            defaults={
-                'pan_ciphertext': encrypt_field(pan),
-                'pan_last4': pan[-4:],
-                'name_on_pan': name_on_pan,
-                'pan_valid': res['valid'],
-                'pan_name_match': res['nameMatch'],
-                'provider': res['provider'],
-                'updated_at': django_tz.now(),
-            }
+            defaults=kyc_defaults
         )
         return Response({'valid': res['valid'], 'nameMatch': res['nameMatch'], 'panLast4': pan[-4:]})
 
+
 class BankView(APIView):
-    permission_classes = [IsCreatorUser]
+    permission_classes = [IsCreatorOnboarding]
 
     def post(self, request):
         body = request.data or {}
@@ -278,18 +291,22 @@ class BankView(APIView):
                 return Response({'message': 'Enter a valid 11-character IFSC code (e.g. HDFC0001234)', 'code': 'validation_error'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
             res = verify_bank(account_number=acct, ifsc=ifsc, holder_name=holder, name_on_pan=name_on_pan)
+            bank_defaults = {
+                'bank_account_ciphertext': encrypt_field(acct),
+                'bank_account_last4': acct[-4:],
+                'bank_ifsc': ifsc,
+                'bank_holder_name': holder,
+                'bank_verified': res['verified'],
+                'bank_name_match': res['nameMatch'],
+                'provider': res['provider'],
+                'updated_at': django_tz.now(),
+            }
+            if not kyc or not kyc.id_status:
+                bank_defaults['id_status'] = 'none'
+
             CreatorKyc.objects.update_or_create(
                 user=profile,
-                defaults={
-                    'bank_account_ciphertext': encrypt_field(acct),
-                    'bank_account_last4': acct[-4:],
-                    'bank_ifsc': ifsc,
-                    'bank_holder_name': holder,
-                    'bank_verified': res['verified'],
-                    'bank_name_match': res['nameMatch'],
-                    'provider': res['provider'],
-                    'updated_at': django_tz.now(),
-                }
+                defaults=bank_defaults
             )
             return Response({'verified': res['verified'], 'maskedAccount': f"XXXX{acct[-4:]}", 'nameMatch': res['nameMatch']})
 
@@ -298,29 +315,44 @@ class BankView(APIView):
                 return Response({'message': 'Enter a valid UPI ID (e.g. name@upi)', 'code': 'validation_error'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
             res = verify_bank(upi_id=upi, name_on_pan=name_on_pan)
+            upi_defaults = {
+                'upi_id': upi,
+                'bank_verified': res['verified'],
+                'bank_name_match': True,
+                'provider': res['provider'],
+                'updated_at': django_tz.now(),
+            }
+            if not kyc or not kyc.id_status:
+                upi_defaults['id_status'] = 'none'
+
             CreatorKyc.objects.update_or_create(
                 user=profile,
-                defaults={
-                    'upi_id': upi,
-                    'bank_verified': res['verified'],
-                    'bank_name_match': True,
-                    'provider': res['provider'],
-                    'updated_at': django_tz.now(),
-                }
+                defaults=upi_defaults
             )
             return Response({'verified': res['verified'], 'upi': upi, 'nameMatch': True})
+
 
         return Response({'message': 'Provide either bank details or UPI ID', 'code': 'validation_error'}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 class CreatorOnboardingSubmitView(APIView):
-    permission_classes = [IsCreatorUser]
+    permission_classes = [IsCreatorOnboarding]
 
     def post(self, request):
         profile = Profile.objects.filter(id=request.user.id).first()
+        now = django_tz.now()
         CreatorProfile.objects.get_or_create(
             user=profile,
-            defaults={'category': 'Lifestyle', 'city': 'Bengaluru', 'languages': ['English'], 'topics': ['Travel']}
+            defaults={
+                'category': 'Lifestyle',
+                'city': 'Bengaluru',
+                'languages': ['English'],
+                'topics': ['Travel'],
+                'visibility': {'rates': True, 'audience': True, 'followers': True},
+                'created_at': now,
+                'updated_at': now,
+            }
         )
+
         SocialAccount.objects.get_or_create(
             user=profile,
             platform='instagram',

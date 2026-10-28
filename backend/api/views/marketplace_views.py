@@ -8,7 +8,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
 from ..models import Creator, CreatorPackage, CreatorReview, SavedCreator, Profile
-from ..permissions import IsBrandUser
+from ..permissions import IsBrandUser, IsMarketplaceParticipant
+
 
 def format_creator_card(c):
     return {
@@ -166,9 +167,10 @@ class CreatorDetailView(APIView):
         return Response(card)
 
 class CreatorPackagesView(APIView):
-    permission_classes = [IsBrandUser]
+    permission_classes = [IsMarketplaceParticipant]
 
     def get(self, request, pk):
+
         creator = Creator.objects.filter(id=pk).first()
         if not creator or (creator.is_seed and not getattr(settings, 'SHOW_SEED_DATA', False)):
             return Response({'error': {'code': 'not_found', 'message': 'Creator not found'}, 'message': 'Creator not found'}, status=status.HTTP_404_NOT_FOUND)

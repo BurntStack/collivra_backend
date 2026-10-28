@@ -31,3 +31,9 @@ from .onboarding_views import (
     SocialCallbackView, KycIdView, KycPanView, BankView,
     CreatorOnboardingSubmitView, VerificationStatusView
 )
+from .admin_views import (
+    AdminVerificationsListView, AdminVerificationDetailView,
+    AdminVerificationApproveView, AdminVerificationRejectView,
+    AdminVerificationRequestInfoView
+)
+
