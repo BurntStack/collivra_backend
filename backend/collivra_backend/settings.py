@@ -109,6 +109,7 @@ REST_FRAMEWORK = {
         'user': '120/min',
         'login': '5/min',
         'otp_send': '5/hour',
+        'email_otp_send': '5/hour',
         'signup': '10/hour',
     },
     'NUM_PROXIES': NUM_PROXIES,

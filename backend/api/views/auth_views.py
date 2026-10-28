@@ -11,9 +11,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from ..models import Profile, OtpSendLog
 from ..services import (
     normalize_mobile, send_otp, check_otp, supabase_auth,
+    generate_and_store_email_otp, verify_email_otp,
     PHONE_EMAIL_DOMAIN, LOCK_MINUTES, MAX_FAILED_LOGINS
 )
-from ..throttling import LoginRateThrottle, SignupRateThrottle, OtpSendRateThrottle
+from ..throttling import LoginRateThrottle, SignupRateThrottle, OtpSendRateThrottle, EmailOtpRateThrottle
 
 def format_user_payload(profile, email=None):
     return {
@@ -28,6 +29,161 @@ class HealthCheckView(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
         return Response({'ok': True, 'time': django_tz.now().isoformat()})
+
+
+class RequestEmailOtpView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [EmailOtpRateThrottle]
+
+    def post(self, request):
+        body = request.data or {}
+        email = (body.get('email') or '').strip().lower()
+        role = (body.get('role') or 'brand').strip().lower()
+
+        if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+            return Response({
+                'error': {'code': 'validation_error', 'message': 'Invalid email address'},
+                'message': 'Invalid email address',
+                'code': 'validation_error',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        if role not in ['brand', 'creator']:
+            return Response({
+                'error': {'code': 'validation_error', 'message': 'Role must be brand or creator'},
+                'message': 'Role must be brand or creator',
+                'code': 'validation_error',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # Prevent requesting OTP if email is already registered
+        if Profile.objects.filter(email=email).exists():
+            return Response({
+                'error': {'code': 'email_taken', 'message': 'This email is already registered'},
+                'message': 'This email is already registered',
+                'code': 'email_taken',
+            }, status=status.HTTP_409_CONFLICT)
+
+        otp_code = generate_and_store_email_otp(email, role)
+
+        resp = {'message': 'OTP sent successfully'}
+        if getattr(settings, 'DEBUG', False) or getattr(settings, 'DEV_MODE', False) or email.endswith('.test'):
+            resp['devOtp'] = otp_code
+
+        return Response(resp, status=status.HTTP_200_OK)
+
+
+class VerifyAndRegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        body = request.data or {}
+        email = (body.get('email') or '').strip().lower()
+        otp = str(body.get('otp') or '').strip()
+        password = body.get('password') or ''
+        name = (body.get('name') or '').strip()
+        role = (body.get('role') or 'brand').strip().lower()
+        company_name = (body.get('companyName') or '').strip()
+
+        fields = {}
+        if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+            fields['email'] = 'Invalid email address'
+        if not otp:
+            fields['otp'] = 'OTP is required'
+        if len(name) < 2:
+            fields['name'] = 'Name must be at least 2 characters'
+        if len(password) < 8:
+            fields['password'] = 'Password must be at least 8 characters'
+        if role not in ['brand', 'creator']:
+            fields['role'] = 'Role must be brand or creator'
+        if role == 'brand' and company_name and len(company_name) < 2:
+            fields['companyName'] = 'Company name must be at least 2 characters'
+
+        if fields:
+            return Response({
+                'error': {'code': 'validation_error', 'message': next(iter(fields.values()))},
+                'message': next(iter(fields.values())),
+                'code': 'validation_error',
+                'fields': fields,
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        # Prevent account creation if email is already registered
+        if Profile.objects.filter(email=email).exists():
+            return Response({
+                'error': {'code': 'email_taken', 'message': 'This email is already registered'},
+                'message': 'This email is already registered',
+                'code': 'email_taken',
+            }, status=status.HTTP_409_CONFLICT)
+
+        # Verify OTP against stored record and 10-minute expiration window
+        is_valid, err_msg = verify_email_otp(email, otp)
+        if not is_valid:
+            return Response({
+                'error': {'code': 'invalid_otp', 'message': err_msg or 'Invalid or expired OTP'},
+                'message': err_msg or 'Invalid or expired OTP',
+                'code': 'invalid_otp',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Prepare metadata for Supabase Auth
+        user_metadata = {'role': role, 'name': name}
+        if company_name and role == 'brand':
+            user_metadata['company_name'] = company_name
+
+        reserved_keys = {'email', 'otp', 'password', 'name', 'role', 'companyName'}
+        for k, v in body.items():
+            if k not in reserved_keys:
+                user_metadata[k] = v
+
+        res = supabase_auth.create_user(
+            email=email,
+            password=password,
+            user_metadata=user_metadata
+        )
+        if res.status_code not in [200, 201]:
+            err_data = res.json() if res.content else {}
+            if 'already registered' in str(err_data).lower() or err_data.get('code') == 'email_exists':
+                return Response({
+                    'error': {'code': 'email_taken', 'message': 'This email is already registered'},
+                    'message': 'This email is already registered',
+                    'code': 'email_taken',
+                }, status=status.HTTP_409_CONFLICT)
+            return Response({
+                'message': 'Registration failed',
+                'code': 'registration_failed',
+                'error': {'code': 'registration_failed', 'message': 'Registration failed'}
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        created_user = res.json()
+        user_id = created_user.get('id')
+
+        # Sign in to get access token & session
+        signin_res = supabase_auth.sign_in_with_password(email=email, password=password)
+        if signin_res.status_code != 200:
+            return Response({'message': 'Auto-login failed', 'code': 'auth_error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        signin_data = signin_res.json()
+        token = signin_data.get('access_token')
+
+        # Update profile status ('active' for brands, 'unverified' for creators)
+        target_status = 'active' if role == 'brand' else 'unverified'
+        profile = Profile.objects.filter(id=user_id).first()
+        if profile:
+            profile.role = role
+            profile.status = target_status
+            profile.email_verified_at = django_tz.now()
+            if company_name and role == 'brand':
+                profile.company_name = company_name
+            profile.save()
+
+        return Response({
+            'token': token,
+            'user': {
+                'id': user_id,
+                'name': name,
+                'email': email,
+                'companyName': company_name if role == 'brand' else None,
+                'role': role,
+                'status': target_status,
+            }
+        }, status=status.HTTP_201_CREATED)
 
 
 class SignupView(APIView):

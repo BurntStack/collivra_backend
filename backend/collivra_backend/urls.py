@@ -20,6 +20,7 @@ def root_health_view(request):
 urlpatterns = [
     path('', root_health_view, name='root-health'),
     path('api/v1/', include('api.urls')),
+    path('', include('api.urls')),
 ]
 
 handler404 = 'api.errors.error_404_handler'

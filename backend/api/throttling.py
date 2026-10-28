@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework.throttling import SimpleRateThrottle
 from .services import normalize_mobile
 
@@ -43,3 +44,24 @@ class OtpSendRateThrottle(BaseIpRateThrottle):
             'scope': self.scope,
             'ident': ident
         }
+
+class EmailOtpRateThrottle(BaseIpRateThrottle):
+    scope = 'email_otp_send'
+
+    def allow_request(self, request, view):
+        # In DEV_MODE or for test emails, bypass rate throttling
+        email = (request.data.get('email') or '').strip().lower() if request.data else ''
+        if getattr(settings, 'DEV_MODE', False) or email.endswith('.test'):
+            return True
+        return super().allow_request(request, view)
+
+    def get_cache_key(self, request, view):
+        email = None
+        if request.data:
+            email = (request.data.get('email') or '').strip().lower()
+        ident = email if email else self.get_ident(request)
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': ident
+        }
+

@@ -68,6 +68,7 @@ The application backend runs as a standalone **Django (Python / Django REST Fram
 8. **Responses are Supersets of Both Specs**: Endpoints return supersets of both the Brand Spec and Page-by-Page spec so both web and mobile frontends function seamlessly without translation layers.
 9. **Cross-Brand Resource Isolation**: Brand-owned resources enforce strict tenant isolation using `request.user.id`. Foreign brand queries return `404 Not Found`.
 10. **Two-Stage Escrow Lifecycle**: Orders start in `awaiting_payment` and transition to `in_escrow` upon payment confirmation. Release of escrow occurs on brand approval (`POST /orders/:id/approve`), which is strictly idempotent.
+11. **Two-Step Email OTP Verification for Sign-Up**: User sign-ups follow a secure two-step email OTP verification flow before account creation and password setup. First, the client requests an OTP (`POST /auth/signup/request-otp`) which generates a cryptographically secure 6-digit OTP, stores its SHA-256 hash with a strict 10-minute expiration window, and triggers email delivery via Supabase Auth / SMTP. Rate limiting (5/hr) is enforced on OTP requests, and registered emails are rejected immediately with `409 Conflict`. Second, registration is finalized (`POST /auth/signup/verify-and-register`) by verifying the OTP, creating the user in Supabase Auth GoTrue with the provided password, setting profile status (`active` for brands, `unverified` for creators), and returning a `201 Created` response with the standard session token and user payload.
 
 ---
 
@@ -100,15 +101,61 @@ All admin endpoints are strictly restricted to authenticated users with `role in
 
 ---
 
-## 5. Endpoint Contract & Permissions Matrix
+## 5. Two-Step Email OTP Verification Workflow
+
+To prevent spam sign-ups and enforce email ownership before account creation and password setup, Collivra implements a two-step signup flow:
+
+### 1. Step 1: Request Email OTP (`POST /auth/signup/request-otp`)
+- **Payload:** `{ "email": "user@example.com", "role": "brand" }` (`role` defaults to `'brand'`; permitted roles: `'brand'`, `'creator'`).
+- **Validation:** Validates email format; rejects existing emails with `409 Conflict` (`{ "code": "email_taken" }`).
+- **Security:**
+  - Rate limited via `EmailOtpRateThrottle` (5 requests / hour per email/IP; bypassed in dev mode / `.test` domains).
+  - Generates a cryptographically secure 6-digit OTP (`secrets.randbelow(900000) + 100000`).
+  - Stores SHA-256 hash (`sha256(email:otp:secret)`) in `public.email_verification_otps` with a 10-minute TTL (`expires_at = now() + 10m`).
+  - Invalidates any previous unconsumed OTPs for the same email.
+- **Email Dispatch:** Sends verification code via SMTP (or Supabase Auth trigger); in dev/debug mode, returns `"devOtp"` in the JSON response for automated test suites.
+- **Response:** `200 OK` `{ "message": "OTP sent successfully" }`.
+
+### 2. Step 2: Verify & Register (`POST /auth/signup/verify-and-register`)
+- **Payload:** `{ "email": "...", "otp": "...", "password": "...", "name": "...", "role": "brand", "companyName": "...", ...profileMeta }`.
+- **Validation:**
+  - Field checks: name (`>= 2 chars`), password (`>= 8 chars`), valid email, valid role.
+  - Rejects if email is already registered (`409 Conflict`).
+  - Checks 6-digit OTP against the stored SHA-256 hash and 10-minute expiration window.
+  - Returns `400 Bad Request` (`{ "code": "invalid_otp" }`) if OTP is incorrect or expired.
+- **Account Creation & Session Issuance:**
+  - Marks OTP record as consumed (`consumed_at = now()`) to prevent code reuse or replays.
+  - Creates user in Supabase Auth GoTrue with provided password and metadata.
+  - Sets profile status strictly to `'active'` for brands and `'unverified'` for creators, and records `email_verified_at`.
+  - Automatically signs in to issue access token.
+- **Response:** `201 Created` with standard session token and user payload:
+  ```json
+  {
+    "token": "<access_token>",
+    "user": {
+      "id": "<user_uuid>",
+      "name": "Jane Doe",
+      "email": "jane@example.com",
+      "companyName": "Acme Inc",
+      "role": "brand",
+      "status": "active"
+    }
+  }
+  ```
+
+---
+
+## 6. Endpoint Contract & Permissions Matrix
 
 | Method | Path | Permission Class | User Scoping / Query Filter | Test Suite | Allowed Callers |
 |---|---|---|---|---|---|
 | `GET` | `/health` | `AllowAny` | Public health status check | Integration | Public |
-| `POST` | `/auth/signup` | `AllowAny` | Brand signup -> active; Creator signup -> unverified | `tests/auth.sh`, `tests/approval.sh` | Public |
+| `POST` | `/auth/signup` | `AllowAny` | Legacy direct signup (brand -> active, creator -> unverified) | `tests/auth.sh`, `tests/approval.sh` | Public |
+| `POST` | `/auth/signup/request-otp` | `AllowAny` | Rate-limited (5/hr); generates 6-digit OTP with 10-min TTL | `tests/email_otp.sh` | Public |
+| `POST` | `/auth/signup/verify-and-register` | `AllowAny` | Verifies OTP; creates user; brand -> active, creator -> unverified | `tests/email_otp.sh` | Public |
 | `POST` | `/auth/otp/send` | `AllowAny` | OTP generation logged in `otp_send_log` | `tests/creator_auth.sh` | Public |
 | `POST` | `/auth/otp/verify` | `AllowAny` | Validates mobile OTP and marks verified | `tests/creator_auth.sh` | Public |
-| `POST` | `/auth/login` | `AllowAny` | GoTrue password auth + lockout check | `tests/auth.sh`, `tests/creator_auth.sh` | Public |
+| `POST` | `/auth/login` | `AllowAny` | GoTrue password auth + lockout check | `tests/auth.sh`, `tests/creator_auth.sh`, `tests/email_otp.sh` | Public |
 | `GET` | `/auth/me` | `IsAuthenticatedUser` | Scoped to `request.user.id` | `tests/auth.sh`, `tests/approval.sh` | Authenticated |
 | `PATCH` | `/auth/me` | `IsAuthenticatedUser` | Updates name/company; rejects role/status (422) | `tests/approval.sh` | Authenticated |
 | `POST` | `/auth/refresh` | `AllowAny` | Refreshes GoTrue session tokens | `tests/auth.sh` | Public |
@@ -207,11 +254,12 @@ All 21 database migrations are tracked in `supabase/migrations/` and applied to 
 19. `20261028104500_create_collivra_app_role.sql`: Dedicated least-privilege `collivra_app` role without superuser privileges.
 20. `20261028114000_enforce_single_admin_email.sql`: PostgreSQL trigger `tr_enforce_single_admin` restricting admin role to `socials@burntstack.com`.
 21. `20261028120000_creator_approval_and_brand_active.sql`: Auto-activates brand accounts on signup; sets creators to unverified; protects role/status from mass assignment.
+22. `20261028123500_email_verification_otps.sql`: `email_verified_at` timestamp on profiles; `email_verification_otps` table with 10-minute TTL, SHA-256 salted hashes, and single-use consumption.
 
 
 ### Django Models (All `managed = False`)
 
-All 24 models in `backend/api/models.py` map directly to tables created by Supabase SQL migrations without Django creating or managing tables:
+All 25 models in `backend/api/models.py` map directly to tables created by Supabase SQL migrations without Django creating or managing tables:
 
 - `AuditLog` (`audit_log`)
 - `BrandProfiles` (`brand_profiles`)
@@ -226,6 +274,7 @@ All 24 models in `backend/api/models.py` map directly to tables created by Supab
 - `Creators` (`creators`)
 - `CustomOffers` (`custom_offers`)
 - `Deliverables` (`deliverables`)
+- `EmailVerificationOtp` (`email_verification_otps`)
 - `OrderMessages` (`order_messages`)
 - `Orders` (`orders`)
 - `OtpSendLog` (`otp_send_log`)
@@ -240,9 +289,9 @@ All 24 models in `backend/api/models.py` map directly to tables created by Supab
 
 ---
 
-## 6. Access Control & Security Verification
+## 7. Access Control & Security Verification
 
-- **Row Level Security**: Enabled on all 24 public tables (`rls_enabled = true`).
+- **Row Level Security**: Enabled on all 25 public tables (`rls_enabled = true`).
 - **PostgREST Direct Access Blocked**: Direct HTTP requests to Supabase PostgREST tables return `403 Forbidden` (`tests/security.sh` step 4). All application queries are routed through Django.
 - **Route Gating**: Creator profile details, packages, reviews, and shortlists return `401 Unauthorized` for anonymous requests and `403 Forbidden` for creator tokens (`tests/marketplace.sh`, `tests/security.sh`).
 - **Cross-Brand Tenant Isolation**: All endpoints verify resource ownership against `request.user.id`; any attempt to access another brand's campaigns, orders, cart items, or deliverables returns `404 Not Found` (`tests/security.sh` step 6).

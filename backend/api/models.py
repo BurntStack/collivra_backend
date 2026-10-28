@@ -291,6 +291,20 @@ class OtpSendLog(models.Model):
         db_table = 'otp_send_log'
 
 
+class EmailVerificationOtp(models.Model):
+    id = models.UUIDField(primary_key=True)
+    email = models.TextField()
+    otp_hash = models.TextField()
+    role = models.TextField()
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = 'email_verification_otps'
+
+
 class Profiles(models.Model):
     id = models.UUIDField(primary_key=True)
     role = models.TextField()  # This field type is a guess.
@@ -304,6 +318,7 @@ class Profiles(models.Model):
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
     mobile_verified_at = models.DateTimeField(blank=True, null=True)
+    email_verified_at = models.DateTimeField(blank=True, null=True)
     failed_logins = models.IntegerField()
     locked_until = models.DateTimeField(blank=True, null=True)
     company_name = models.TextField(blank=True, null=True)
@@ -435,3 +450,4 @@ OtpSendLogModel = OtpSendLog
 Upload = Uploads
 Setting = Settings
 VerificationRequest = VerificationRequests
+EmailVerificationOtpModel = EmailVerificationOtp

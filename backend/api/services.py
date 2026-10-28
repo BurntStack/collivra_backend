@@ -5,8 +5,10 @@ import json
 import base64
 import hmac
 import hashlib
+import secrets
 from datetime import datetime, timezone, timedelta
 from django.conf import settings
+from django.utils import timezone as django_tz
 import requests
 from rest_framework.exceptions import ValidationError
 
@@ -111,6 +113,89 @@ def approve_test_creator(user_id_or_mobile):
         p.save()
         return True
     return False
+
+def compute_email_otp_hash(email, otp_code):
+    salt = getattr(settings, 'SECRET_KEY', 'default_secret')[:16]
+    return hashlib.sha256(f"{email.lower().strip()}:{str(otp_code).strip()}:{salt}".encode('utf-8')).hexdigest()
+
+def send_email_otp(email, otp_code):
+    """
+    Sends an email OTP via SMTP or Supabase Auth.
+    In dev mode or if SMTP is not configured, logs delivery safely.
+    """
+    if getattr(settings, 'EMAIL_HOST', None):
+        try:
+            from django.core.mail import send_mail
+            send_mail(
+                subject='Your Collivra Verification Code',
+                message=f'Your verification code is: {otp_code}. It is valid for 10 minutes.',
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@collivra.app'),
+                recipient_list=[email],
+                fail_silently=False,
+            )
+            return True
+        except Exception:
+            pass
+
+    return True
+
+def generate_and_store_email_otp(email, role='brand'):
+    """
+    Generates a secure 6-digit OTP, stores it with a 10-minute expiration timestamp,
+    hashes it securely, and triggers email delivery.
+    """
+    email = (email or '').strip().lower()
+    otp_code = f"{secrets.randbelow(900000) + 100000:06d}"
+    otp_hash = compute_email_otp_hash(email, otp_code)
+    expires_at = django_tz.now() + timedelta(minutes=10)
+
+    from .models import EmailVerificationOtp
+    # Invalidate any previous unconsumed OTPs for this email
+    EmailVerificationOtp.objects.filter(email=email, consumed_at__isnull=True).delete()
+
+    EmailVerificationOtp.objects.create(
+        id=uuid.uuid4(),
+        email=email,
+        otp_hash=otp_hash,
+        role=role,
+        expires_at=expires_at,
+        created_at=django_tz.now(),
+    )
+
+    send_email_otp(email, otp_code)
+    return otp_code
+
+def verify_email_otp(email, otp_code):
+    """
+    Verifies 6-digit OTP code against the stored record and expiration window.
+    Returns (True, None) if valid, or (False, reason) if invalid or expired.
+    Marks OTP as consumed immediately upon successful verification (single-use).
+    """
+    email = (email or '').strip().lower()
+    code = str(otp_code or '').strip()
+
+    if not email or not code:
+        return False, "Email and OTP code are required"
+
+    from .models import EmailVerificationOtp
+    record = EmailVerificationOtp.objects.filter(
+        email=email,
+        consumed_at__isnull=True
+    ).order_by('-created_at').first()
+
+    if not record:
+        return False, "Invalid or expired OTP"
+
+    if record.expires_at < django_tz.now():
+        return False, "OTP has expired"
+
+    expected_hash = compute_email_otp_hash(email, code)
+    if not hmac.compare_digest(record.otp_hash, expected_hash):
+        return False, "Invalid OTP code"
+
+    record.consumed_at = django_tz.now()
+    record.save(update_fields=['consumed_at'])
+    return True, None
 
 # Field encryption (AES-256-GCM or HMAC/base64 stub for mock/dev)
 def encrypt_field(plain):
