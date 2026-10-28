@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     HealthCheckView, SignupView, RequestEmailOtpView, VerifyAndRegisterView,
+    EmailOtpTestUIView,
     OtpSendView, OtpVerifyView, LoginView,
     MeView, RefreshView, ForgotPasswordView, ResetPasswordView,
     ChangePasswordView, LogoutView, GoogleOAuthView, AppleOAuthView,
@@ -31,6 +32,7 @@ urlpatterns = [
     path('health', HealthCheckView.as_view(), name='health'),
 
     # Auth
+    path('auth/test', EmailOtpTestUIView.as_view(), name='auth-test-ui'),
     path('auth/signup', SignupView.as_view(), name='auth-signup'),
     path('auth/signup/request-otp', RequestEmailOtpView.as_view(), name='auth-signup-request-otp'),
     path('auth/signup/verify-and-register', VerifyAndRegisterView.as_view(), name='auth-signup-verify-and-register'),

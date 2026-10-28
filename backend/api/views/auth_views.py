@@ -2,6 +2,7 @@ import json
 import re
 from datetime import datetime, timezone, timedelta
 from django.conf import settings
+from django.http import HttpResponse
 from django.utils import timezone as django_tz
 from rest_framework import status
 from rest_framework.views import APIView
@@ -70,9 +71,45 @@ class RequestEmailOtpView(APIView):
 
         return Response(resp, status=status.HTTP_200_OK)
 
+    def get(self, request):
+        return Response({
+            'endpoint': 'POST /auth/signup/request-otp',
+            'description': 'Generates a secure 6-digit OTP, stores it with 10-minute TTL, and triggers email delivery.',
+            'fields': {
+                'email': 'string (required)',
+                'role': 'brand | creator (default: brand)'
+            },
+            'example': {
+                'email': 'you@example.com',
+                'role': 'brand'
+            }
+        })
+
 
 class VerifyAndRegisterView(APIView):
     permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({
+            'endpoint': 'POST /auth/signup/verify-and-register',
+            'description': 'Verifies the 6-digit OTP code against the stored record and creates user account in Supabase Auth.',
+            'fields': {
+                'email': 'string (required)',
+                'otp': 'string (6 digits, required)',
+                'password': 'string (min 8 chars, required)',
+                'name': 'string (min 2 chars, required)',
+                'role': 'brand | creator (default: brand)',
+                'companyName': 'string (required for brand)'
+            },
+            'example': {
+                'email': 'you@example.com',
+                'otp': '123456',
+                'password': 'MyStrongPassword123!',
+                'name': 'Srikar',
+                'role': 'brand',
+                'companyName': 'Burntstack'
+            }
+        })
 
     def post(self, request):
         body = request.data or {}
@@ -184,6 +221,219 @@ class VerifyAndRegisterView(APIView):
                 'status': target_status,
             }
         }, status=status.HTTP_201_CREATED)
+
+
+class EmailOtpTestUIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Collivra - Email OTP Verification Interactive Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #0b0f19; color: #f1f5f9; padding: 32px 16px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+    .container { max-width: 650px; width: 100%; }
+    .header { text-align: center; margin-bottom: 24px; }
+    .header h1 { font-size: 24px; color: #38bdf8; font-weight: 700; margin-bottom: 6px; }
+    .header p { color: #94a3b8; font-size: 14px; }
+    .card { background: #131c2e; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .card-title { font-size: 16px; font-weight: 600; color: #e2e8f0; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
+    .step-pill { background: #0284c7; color: #fff; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 9999px; }
+    .form-group { margin-bottom: 12px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    input, select { width: 100%; background: #0b0f19; border: 1px solid #334155; color: #fff; padding: 9px 12px; border-radius: 6px; font-size: 14px; outline: none; transition: border-color 0.15s; }
+    input:focus, select:focus { border-color: #38bdf8; }
+    .btn { background: #0284c7; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; width: 100%; margin-top: 6px; }
+    .btn:hover { background: #0369a1; }
+    .result { margin-top: 14px; padding: 12px; border-radius: 6px; font-size: 13px; font-family: monospace; white-space: pre-wrap; word-break: break-all; display: none; }
+    .success { background: #064e3b; border: 1px solid #059669; color: #a7f3d0; }
+    .error { background: #450a0a; border: 1px solid #dc2626; color: #fecaca; }
+    .code-box { background: #0f172a; border: 1px dashed #38bdf8; color: #38bdf8; padding: 10px; border-radius: 6px; font-size: 18px; font-weight: 700; letter-spacing: 4px; text-align: center; margin: 10px 0; display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Collivra Sign-Up Verification</h1>
+      <p>Test the 2-step Email OTP verification flow directly in your browser</p>
+    </div>
+
+    <!-- Step 1: Request OTP -->
+    <div class="card">
+      <div class="card-title">
+        <span>Step 1: Request Email OTP</span>
+        <span class="step-pill">POST /auth/signup/request-otp</span>
+      </div>
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="req-email" placeholder="you@domain.com" value="">
+      </div>
+      <div class="form-group">
+        <label>Account Role</label>
+        <select id="req-role">
+          <option value="brand">Brand (Active Immediately)</option>
+          <option value="creator">Creator (Requires Approval)</option>
+        </select>
+      </div>
+      <button class="btn" onclick="requestOtp()">Send 6-Digit OTP</button>
+      <div id="otp-display" class="code-box"></div>
+      <div id="req-result" class="result"></div>
+    </div>
+
+    <!-- Step 2: Verify & Register -->
+    <div class="card">
+      <div class="card-title">
+        <span>Step 2: Verify OTP & Create Account</span>
+        <span class="step-pill">POST /auth/signup/verify-and-register</span>
+      </div>
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="reg-email" placeholder="you@domain.com" value="">
+      </div>
+      <div class="form-group">
+        <label>6-Digit OTP Code</label>
+        <input type="text" id="reg-otp" placeholder="e.g. 123456" maxlength="6">
+      </div>
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="reg-name" placeholder="Your Name" value="Test User">
+      </div>
+      <div class="form-group">
+        <label>Password (Min 8 Characters)</label>
+        <input type="password" id="reg-password" placeholder="Password" value="MyStrongPassword123!">
+      </div>
+      <div class="form-group" id="company-group">
+        <label>Company Name (for Brands)</label>
+        <input type="text" id="reg-company" placeholder="Company Name" value="Acme Inc">
+      </div>
+      <button class="btn" onclick="verifyAndRegister()">Verify OTP & Complete Sign-Up</button>
+      <div id="reg-result" class="result"></div>
+    </div>
+
+    <!-- Step 3: Test Login -->
+    <div class="card">
+      <div class="card-title">
+        <span>Step 3: Test Immediate Login</span>
+        <span class="step-pill">POST /auth/login</span>
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@domain.com">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="login-password" value="MyStrongPassword123!">
+      </div>
+      <button class="btn" onclick="testLogin()">Log In</button>
+      <div id="login-result" class="result"></div>
+    </div>
+  </div>
+
+  <script>
+    async function requestOtp() {
+      const email = document.getElementById('req-email').value.trim();
+      const role = document.getElementById('req-role').value;
+      const resEl = document.getElementById('req-result');
+      const otpBox = document.getElementById('otp-display');
+
+      if (!email) { alert('Please enter an email address'); return; }
+
+      try {
+        const res = await fetch('/auth/signup/request-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, role })
+        });
+        const data = await res.json();
+        resEl.style.display = 'block';
+        if (res.ok) {
+          resEl.className = 'result success';
+          resEl.textContent = `Status: ${res.status} OK\n` + JSON.stringify(data, null, 2);
+          if (data.devOtp) {
+            otpBox.style.display = 'block';
+            otpBox.textContent = data.devOtp;
+            document.getElementById('reg-otp').value = data.devOtp;
+          }
+          document.getElementById('reg-email').value = email;
+          document.getElementById('login-email').value = email;
+        } else {
+          resEl.className = 'result error';
+          resEl.textContent = `Status: ${res.status} Error\n` + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        resEl.style.display = 'block';
+        resEl.className = 'result error';
+        resEl.textContent = 'Request failed: ' + err.message;
+      }
+    }
+
+    async function verifyAndRegister() {
+      const email = document.getElementById('reg-email').value.trim();
+      const otp = document.getElementById('reg-otp').value.trim();
+      const name = document.getElementById('reg-name').value.trim();
+      const password = document.getElementById('reg-password').value;
+      const companyName = document.getElementById('reg-company').value.trim();
+      const role = document.getElementById('req-role').value;
+      const resEl = document.getElementById('reg-result');
+
+      try {
+        const res = await fetch('/auth/signup/verify-and-register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp, name, password, role, companyName })
+        });
+        const data = await res.json();
+        resEl.style.display = 'block';
+        if (res.ok) {
+          resEl.className = 'result success';
+          resEl.textContent = `Status: 201 Created!\nAccount active! Token received:\n` + JSON.stringify(data, null, 2);
+          document.getElementById('login-email').value = email;
+          document.getElementById('login-password').value = password;
+        } else {
+          resEl.className = 'result error';
+          resEl.textContent = `Status: ${res.status} Error\n` + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        resEl.style.display = 'block';
+        resEl.className = 'result error';
+        resEl.textContent = 'Registration failed: ' + err.message;
+      }
+    }
+
+    async function testLogin() {
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      const resEl = document.getElementById('login-result');
+
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        resEl.style.display = 'block';
+        if (res.ok) {
+          resEl.className = 'result success';
+          resEl.textContent = `Status: 200 OK (Logged In successfully!)\n` + JSON.stringify(data, null, 2);
+        } else {
+          resEl.className = 'result error';
+          resEl.textContent = `Status: ${res.status} Error\n` + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        resEl.style.display = 'block';
+        resEl.className = 'result error';
+        resEl.textContent = 'Login failed: ' + err.message;
+      }
+    }
+  </script>
+</body>
+</html>"""
+        return HttpResponse(html, content_type='text/html')
 
 
 class SignupView(APIView):

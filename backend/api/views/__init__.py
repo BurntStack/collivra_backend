@@ -1,5 +1,6 @@
 from .auth_views import (
     HealthCheckView, SignupView, RequestEmailOtpView, VerifyAndRegisterView,
+    EmailOtpTestUIView,
     OtpSendView, OtpVerifyView, LoginView,
     MeView, RefreshView, ForgotPasswordView, ResetPasswordView,
     ChangePasswordView, LogoutView, GoogleOAuthView, AppleOAuthView
