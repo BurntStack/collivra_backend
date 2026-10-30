@@ -107,7 +107,7 @@ SUPABASE_SERVICE_ROLE_KEY = config('SUPABASE_SERVICE_ROLE_KEY', default='')
 SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
 
 DEV_MODE = config('DEV_MODE', default=True, cast=bool)
-SHOW_SEED_DATA = config('SHOW_SEED_DATA', default=False, cast=bool)
+SHOW_SEED_DATA = config('SHOW_SEED_DATA', default=True, cast=bool)
 FIELD_ENCRYPTION_KEY = config('FIELD_ENCRYPTION_KEY', default='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
 
 # Twilio Verify Configuration
