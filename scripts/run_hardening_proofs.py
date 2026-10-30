@@ -174,7 +174,7 @@ try:
         review_count=0,
         price_from=2500,
         deliverable='1 Post',
-        image='https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+        image='',
         top_creator=False,
         replies_within='24 hours',
         is_seed=False,

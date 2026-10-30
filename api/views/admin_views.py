@@ -221,7 +221,7 @@ class AdminVerificationApproveView(APIView):
                     price_from=1500,
                     deliverable='1 Reel',
                     quotes=[],
-                    image='https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+                    image='',
                     top_creator=False,
                     bio=c_prof.bio if c_prof and c_prof.bio else '',
                     gallery=[],

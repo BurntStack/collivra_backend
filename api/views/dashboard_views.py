@@ -302,7 +302,7 @@ class DeliverablesListView(APIView):
                     id=uuid.uuid4(), brand=profile, creator=ananya,
                     content='Winter Hydration Morning Routine Reel', type='Reel', platform='Instagram',
                     status='Approved',
-                    preview_url='https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80',
+                    preview_url='',
                     download_url='https://assets.collivra.com/deliverables/ananya_winter_reel.mp4',
                     delivered_at=now - timedelta(days=2), created_at=now - timedelta(days=2), is_seed=True
                 ))
@@ -311,7 +311,7 @@ class DeliverablesListView(APIView):
                     id=uuid.uuid4(), brand=profile, creator=rohan,
                     content='Unboxing & Sound Test Review', type='Video', platform='YouTube',
                     status='Live',
-                    preview_url='https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=600&q=80',
+                    preview_url='',
                     download_url='https://assets.collivra.com/deliverables/rohan_sound_review.mp4',
                     delivered_at=now - timedelta(days=5), created_at=now - timedelta(days=5), is_seed=True
                 ))
@@ -320,7 +320,7 @@ class DeliverablesListView(APIView):
                     id=uuid.uuid4(), brand=profile, creator=neha,
                     content='Festive Lookbook Outfit Styling', type='Reel', platform='Instagram',
                     status='Needs review',
-                    preview_url='https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=600&q=80',
+                    preview_url='',
                     download_url='https://assets.collivra.com/deliverables/neha_festive_cut.mp4',
                     delivered_at=now - timedelta(days=1), created_at=now - timedelta(days=1), is_seed=True
                 ))
