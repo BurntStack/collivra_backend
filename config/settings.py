@@ -157,3 +157,6 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER or 'Collivra <no-reply@collivra.app>')
 EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=5, cast=int)
 
+# 2Factor.in SMS Gateway Configuration
+TWO_FACTOR_API_KEY = config('TWO_FACTOR_API_KEY', default='a92dc60b-d6c2-11f1-ac3e-0200cd936042')
+

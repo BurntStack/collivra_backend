@@ -46,6 +46,25 @@ def compute_mobile_otp_hash(mobile, otp_code):
     salt = getattr(settings, 'SECRET_KEY', 'default_secret')[:16]
     return hashlib.sha256(f"{mobile.strip()}:{str(otp_code).strip()}:{salt}".encode('utf-8')).hexdigest()
 
+def _dispatch_2factor_sms(mobile, otp_code):
+    """
+    Sends real SMS OTP to Indian mobile numbers via 2Factor.in gateway.
+    """
+    api_key = getattr(settings, 'TWO_FACTOR_API_KEY', None) or os.environ.get('TWO_FACTOR_API_KEY')
+    if not api_key:
+        return
+
+    phone_clean = re.sub(r'\D', '', str(mobile))
+    if phone_clean.startswith('91') and len(phone_clean) == 12:
+        phone_clean = phone_clean[2:]
+
+    try:
+        url = f"https://2factor.in/API/V1/{api_key}/SMS/{phone_clean}/{otp_code}"
+        res = requests.get(url, timeout=6)
+        print(f"[2FACTOR SMS DISPATCH] Sent OTP {otp_code} to {phone_clean}: {res.status_code} {res.text}")
+    except Exception as e:
+        print(f"[2FACTOR SMS DISPATCH ERROR] Failed to send SMS to {phone_clean}: {e}")
+
 def generate_and_store_mobile_otp(mobile, purpose='login', role='creator'):
     """
     Generates a secure 6-digit OTP, stores it with 10-minute TTL in DB,
@@ -81,6 +100,11 @@ def generate_and_store_mobile_otp(mobile, purpose='login', role='creator'):
         )
     except Exception:
         pass
+
+    # Real SMS dispatch via 2Factor.in in background thread
+    import threading
+    t = threading.Thread(target=_dispatch_2factor_sms, args=(norm_mobile, otp_code), daemon=True)
+    t.start()
 
     # SMS dispatch via Twilio Verify if configured
     account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None) or os.environ.get('TWILIO_ACCOUNT_SID')
