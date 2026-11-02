@@ -514,14 +514,19 @@ class EmailOtpTestUIView(APIView):
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Collivra - Email OTP Verification Interactive Test</title>
+  <title>Collivra - Auth & OTP Verification Interactive Test</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: #0b0f19; color: #f1f5f9; padding: 32px 16px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
-    .container { max-width: 650px; width: 100%; }
+    .container { max-width: 680px; width: 100%; }
     .header { text-align: center; margin-bottom: 24px; }
     .header h1 { font-size: 24px; color: #38bdf8; font-weight: 700; margin-bottom: 6px; }
     .header p { color: #94a3b8; font-size: 14px; }
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 20px; background: #131c2e; padding: 4px; border-radius: 8px; border: 1px solid #1e293b; }
+    .tab-btn { flex: 1; padding: 10px 16px; border: none; background: transparent; color: #94a3b8; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
+    .tab-btn.active { background: #0284c7; color: white; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
     .card { background: #131c2e; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
     .card-title { font-size: 16px; font-weight: 600; color: #e2e8f0; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
     .step-pill { background: #0284c7; color: #fff; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 9999px; }
@@ -531,91 +536,232 @@ class EmailOtpTestUIView(APIView):
     input:focus, select:focus { border-color: #38bdf8; }
     .btn { background: #0284c7; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; width: 100%; margin-top: 6px; }
     .btn:hover { background: #0369a1; }
+    .btn-green { background: #059669; }
+    .btn-green:hover { background: #047857; }
     .result { margin-top: 14px; padding: 12px; border-radius: 6px; font-size: 13px; font-family: monospace; white-space: pre-wrap; word-break: break-all; display: none; }
     .success { background: #064e3b; border: 1px solid #059669; color: #a7f3d0; }
     .error { background: #450a0a; border: 1px solid #dc2626; color: #fecaca; }
-    .code-box { background: #0f172a; border: 1px dashed #38bdf8; color: #38bdf8; padding: 10px; border-radius: 6px; font-size: 18px; font-weight: 700; letter-spacing: 4px; text-align: center; margin: 10px 0; display: none; }
+    .code-box { background: #0f172a; border: 1px dashed #38bdf8; color: #38bdf8; padding: 12px; border-radius: 6px; font-size: 20px; font-weight: 700; letter-spacing: 5px; text-align: center; margin: 12px 0; display: none; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>Collivra Sign-Up Verification</h1>
-      <p>Test the 2-step Email OTP verification flow directly in your browser</p>
+      <h1>Collivra Authentication Portal</h1>
+      <p>Test Email OTP & Mobile Phone OTP flows live in your browser</p>
     </div>
 
-    <!-- Step 1: Request OTP -->
-    <div class="card">
-      <div class="card-title">
-        <span>Step 1: Request Email OTP</span>
-        <span class="step-pill">POST /auth/signup/request-otp</span>
-      </div>
-      <div class="form-group">
-        <label>Email Address</label>
-        <input type="email" id="req-email" placeholder="you@domain.com" value="">
-      </div>
-      <div class="form-group">
-        <label>Account Role</label>
-        <select id="req-role">
-          <option value="brand">Brand (Active Immediately)</option>
-          <option value="creator">Creator (Requires Approval)</option>
-        </select>
-      </div>
-      <button class="btn" onclick="requestOtp()">Send 6-Digit OTP</button>
-      <div id="otp-display" class="code-box"></div>
-      <div id="req-result" class="result"></div>
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="tab-btn active" onclick="switchTab('mobile')">📱 Mobile Phone OTP</button>
+      <button class="tab-btn" onclick="switchTab('email')">✉️ Email OTP</button>
     </div>
 
-    <!-- Step 2: Verify & Register -->
-    <div class="card">
-      <div class="card-title">
-        <span>Step 2: Verify OTP & Create Account</span>
-        <span class="step-pill">POST /auth/signup/verify-and-register</span>
+    <!-- TAB 1: MOBILE OTP -->
+    <div id="tab-mobile" class="tab-content active">
+      <!-- Step 1: Request Mobile OTP -->
+      <div class="card">
+        <div class="card-title">
+          <span>Step 1: Request Mobile OTP</span>
+          <span class="step-pill">POST /api/v1/auth/mobile/request-otp</span>
+        </div>
+        <div class="form-group">
+          <label>Mobile Number (Indian 10-digit or +91)</label>
+          <input type="tel" id="mobile-number" placeholder="+919876543210 or 9876543210" value="+91">
+        </div>
+        <div class="form-group">
+          <label>Purpose</label>
+          <select id="mobile-purpose">
+            <option value="login">Login (Instant Session)</option>
+            <option value="signup">Sign Up (Complete Registration)</option>
+            <option value="verification">Verification</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Role</label>
+          <select id="mobile-role">
+            <option value="creator">Creator</option>
+            <option value="brand">Brand</option>
+          </select>
+        </div>
+        <button class="btn btn-green" onclick="requestMobileOtp()">Send 6-Digit Mobile OTP</button>
+        <div id="mobile-otp-display" class="code-box"></div>
+        <div id="mobile-req-result" class="result"></div>
       </div>
-      <div class="form-group">
-        <label>Email Address</label>
-        <input type="email" id="reg-email" placeholder="you@domain.com" value="">
+
+      <!-- Step 2: Verify Mobile OTP -->
+      <div class="card">
+        <div class="card-title">
+          <span>Step 2: Verify OTP & Sign In</span>
+          <span class="step-pill">POST /api/v1/auth/mobile/verify-otp</span>
+        </div>
+        <div class="form-group">
+          <label>Mobile Number</label>
+          <input type="tel" id="verify-mobile" placeholder="+919876543210">
+        </div>
+        <div class="form-group">
+          <label>6-Digit OTP Code</label>
+          <input type="text" id="verify-code" placeholder="Enter 6-digit OTP code" maxlength="6">
+        </div>
+        <button class="btn btn-green" onclick="verifyMobileOtp()">Verify OTP & Authenticate</button>
+        <div id="mobile-verify-result" class="result"></div>
       </div>
-      <div class="form-group">
-        <label>6-Digit OTP Code</label>
-        <input type="text" id="reg-otp" placeholder="e.g. 123456" maxlength="6">
-      </div>
-      <div class="form-group">
-        <label>Full Name</label>
-        <input type="text" id="reg-name" placeholder="Your Name" value="Test User">
-      </div>
-      <div class="form-group">
-        <label>Password (Min 8 Characters)</label>
-        <input type="password" id="reg-password" placeholder="Password" value="MyStrongPassword123!">
-      </div>
-      <div class="form-group" id="company-group">
-        <label>Company Name (for Brands)</label>
-        <input type="text" id="reg-company" placeholder="Company Name" value="Acme Inc">
-      </div>
-      <button class="btn" onclick="verifyAndRegister()">Verify OTP & Complete Sign-Up</button>
-      <div id="reg-result" class="result"></div>
     </div>
 
-    <!-- Step 3: Test Login -->
-    <div class="card">
-      <div class="card-title">
-        <span>Step 3: Test Immediate Login</span>
-        <span class="step-pill">POST /auth/login</span>
+    <!-- TAB 2: EMAIL OTP -->
+    <div id="tab-email" class="tab-content">
+      <!-- Step 1: Request Email OTP -->
+      <div class="card">
+        <div class="card-title">
+          <span>Step 1: Request Email OTP</span>
+          <span class="step-pill">POST /auth/signup/request-otp</span>
+        </div>
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" id="req-email" placeholder="you@domain.com" value="">
+        </div>
+        <div class="form-group">
+          <label>Account Role</label>
+          <select id="req-role">
+            <option value="brand">Brand (Active Immediately)</option>
+            <option value="creator">Creator (Requires Approval)</option>
+          </select>
+        </div>
+        <button class="btn" onclick="requestOtp()">Send 6-Digit Email OTP</button>
+        <div id="otp-display" class="code-box"></div>
+        <div id="req-result" class="result"></div>
       </div>
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="login-email" placeholder="you@domain.com">
+
+      <!-- Step 2: Verify & Register -->
+      <div class="card">
+        <div class="card-title">
+          <span>Step 2: Verify OTP & Create Account</span>
+          <span class="step-pill">POST /auth/signup/verify-and-register</span>
+        </div>
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" id="reg-email" placeholder="you@domain.com" value="">
+        </div>
+        <div class="form-group">
+          <label>6-Digit OTP Code</label>
+          <input type="text" id="reg-otp" placeholder="e.g. 123456" maxlength="6">
+        </div>
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="reg-name" placeholder="Your Name" value="Test User">
+        </div>
+        <div class="form-group">
+          <label>Password (Min 8 Characters)</label>
+          <input type="password" id="reg-password" placeholder="Password" value="MyStrongPassword123!">
+        </div>
+        <div class="form-group" id="company-group">
+          <label>Company Name (for Brands)</label>
+          <input type="text" id="reg-company" placeholder="Company Name" value="Acme Inc">
+        </div>
+        <button class="btn" onclick="verifyAndRegister()">Verify OTP & Complete Sign-Up</button>
+        <div id="reg-result" class="result"></div>
       </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input type="password" id="login-password" value="MyStrongPassword123!">
+
+      <!-- Step 3: Test Login -->
+      <div class="card">
+        <div class="card-title">
+          <span>Step 3: Test Password Login</span>
+          <span class="step-pill">POST /auth/login</span>
+        </div>
+        <div class="form-group">
+          <label>Email or Mobile</label>
+          <input type="text" id="login-email" placeholder="you@domain.com or +919876543210">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-password" value="MyStrongPassword123!">
+        </div>
+        <button class="btn" onclick="testLogin()">Log In</button>
+        <div id="login-result" class="result"></div>
       </div>
-      <button class="btn" onclick="testLogin()">Log In</button>
-      <div id="login-result" class="result"></div>
     </div>
   </div>
 
   <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      if (tab === 'mobile') {
+        document.querySelectorAll('.tab-btn')[0].classList.add('active');
+        document.getElementById('tab-mobile').classList.add('active');
+      } else {
+        document.querySelectorAll('.tab-btn')[1].classList.add('active');
+        document.getElementById('tab-email').classList.add('active');
+      }
+    }
+
+    async function requestMobileOtp() {
+      const mobile = document.getElementById('mobile-number').value.trim();
+      const purpose = document.getElementById('mobile-purpose').value;
+      const role = document.getElementById('mobile-role').value;
+      const resEl = document.getElementById('mobile-req-result');
+      const otpBox = document.getElementById('mobile-otp-display');
+
+      if (!mobile || mobile.length < 10) { alert('Please enter a valid Indian mobile number'); return; }
+
+      try {
+        const res = await fetch('/api/v1/auth/mobile/request-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mobile, purpose, role })
+        });
+        const data = await res.json();
+        resEl.style.display = 'block';
+        if (res.ok) {
+          resEl.className = 'result success';
+          resEl.textContent = `Status: ${res.status} OK\n` + JSON.stringify(data, null, 2);
+          if (data.devOtp) {
+            otpBox.style.display = 'block';
+            otpBox.textContent = data.devOtp;
+            document.getElementById('verify-code').value = data.devOtp;
+          }
+          document.getElementById('verify-mobile').value = data.mobile || mobile;
+        } else {
+          resEl.className = 'result error';
+          resEl.textContent = `Status: ${res.status} Error\n` + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        resEl.style.display = 'block';
+        resEl.className = 'result error';
+        resEl.textContent = 'Request failed: ' + err.message;
+      }
+    }
+
+    async function verifyMobileOtp() {
+      const mobile = document.getElementById('verify-mobile').value.trim();
+      const code = document.getElementById('verify-code').value.trim();
+      const purpose = document.getElementById('mobile-purpose').value;
+      const resEl = document.getElementById('mobile-verify-result');
+
+      if (!mobile || !code) { alert('Please enter both mobile and 6-digit code'); return; }
+
+      try {
+        const res = await fetch('/api/v1/auth/mobile/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mobile, code, purpose })
+        });
+        const data = await res.json();
+        resEl.style.display = 'block';
+        if (res.ok) {
+          resEl.className = 'result success';
+          resEl.textContent = `Status: 200 OK! Authentication Successful!\n` + JSON.stringify(data, null, 2);
+        } else {
+          resEl.className = 'result error';
+          resEl.textContent = `Status: ${res.status} Error\n` + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        resEl.style.display = 'block';
+        resEl.className = 'result error';
+        resEl.textContent = 'Verification failed: ' + err.message;
+      }
+    }
+
     async function requestOtp() {
       const email = document.getElementById('req-email').value.trim();
       const role = document.getElementById('req-role').value;
@@ -695,7 +841,7 @@ class EmailOtpTestUIView(APIView):
         const res = await fetch('/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
+          body: JSON.stringify({ identifier: email, password })
         });
         const data = await res.json();
         resEl.style.display = 'block';
