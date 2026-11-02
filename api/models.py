@@ -305,6 +305,21 @@ class EmailVerificationOtp(models.Model):
         db_table = 'email_verification_otps'
 
 
+class MobileVerificationOtp(models.Model):
+    id = models.UUIDField(primary_key=True)
+    mobile = models.TextField()
+    otp_hash = models.TextField()
+    purpose = models.TextField(default='login')
+    role = models.TextField(default='creator')
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = 'mobile_verification_otps'
+
+
 class Profiles(models.Model):
     id = models.UUIDField(primary_key=True)
     role = models.TextField()  # This field type is a guess.

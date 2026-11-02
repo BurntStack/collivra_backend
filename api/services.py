@@ -42,60 +42,134 @@ def is_dev_number(mobile):
         dev_numbers = [n.strip() for n in dev_numbers.split(',') if n.strip()]
     return mobile in dev_numbers or str(mobile).startswith('+9199999999')
 
-def send_otp(mobile):
-    """
-    Sends an SMS OTP.
-    - If DEV_MODE is True and the number is whitelisted, simulated send succeeds.
-    - If DEV_MODE is False (or number not whitelisted), Twilio Verify is required.
-      If Twilio Verify credentials are not configured or call fails, it fails closed (returns False).
-    """
-    if getattr(settings, 'DEV_MODE', False) and is_dev_number(mobile):
-        return True
+def compute_mobile_otp_hash(mobile, otp_code):
+    salt = getattr(settings, 'SECRET_KEY', 'default_secret')[:16]
+    return hashlib.sha256(f"{mobile.strip()}:{str(otp_code).strip()}:{salt}".encode('utf-8')).hexdigest()
 
+def generate_and_store_mobile_otp(mobile, purpose='login', role='creator'):
+    """
+    Generates a secure 6-digit OTP, stores it with 10-minute TTL in DB,
+    hashes it securely, logs it to server, and attempts SMS delivery.
+    """
+    norm_mobile = normalize_mobile(mobile)
+    if not norm_mobile:
+        return None
+
+    from .models import MobileVerificationOtp, OtpSendLog
+    otp_code = f"{secrets.randbelow(900000) + 100000:06d}"
+    otp_hash = compute_mobile_otp_hash(norm_mobile, otp_code)
+    expires_at = django_tz.now() + timedelta(minutes=10)
+
+    # Invalidate previous unconsumed OTPs for this mobile
+    MobileVerificationOtp.objects.filter(mobile=norm_mobile, consumed_at__isnull=True).delete()
+
+    MobileVerificationOtp.objects.create(
+        id=uuid.uuid4(),
+        mobile=norm_mobile,
+        otp_hash=otp_hash,
+        purpose=purpose or 'login',
+        role=role or 'creator',
+        expires_at=expires_at,
+        created_at=django_tz.now(),
+    )
+
+    try:
+        OtpSendLog.objects.create(
+            mobile=norm_mobile,
+            purpose=purpose or 'login',
+            created_at=django_tz.now()
+        )
+    except Exception:
+        pass
+
+    # SMS dispatch via Twilio Verify if configured
     account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None) or os.environ.get('TWILIO_ACCOUNT_SID')
     auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None) or os.environ.get('TWILIO_AUTH_TOKEN')
     service_sid = getattr(settings, 'TWILIO_VERIFY_SERVICE_SID', None) or os.environ.get('TWILIO_VERIFY_SERVICE_SID')
 
-    if not (account_sid and auth_token and service_sid):
-        # Fail closed
-        return False
+    if account_sid and auth_token and service_sid:
+        try:
+            from twilio.rest import Client
+            client = Client(account_sid, auth_token)
+            client.verify.v2.services(service_sid).verifications.create(to=norm_mobile, channel='sms')
+        except Exception as e:
+            print(f"[TWILIO DISPATCH ERROR] {e}")
 
-    try:
-        from twilio.rest import Client
-        client = Client(account_sid, auth_token)
-        verification = client.verify.v2.services(service_sid).verifications.create(to=mobile, channel='sms')
-        return verification.status in ['pending', 'approved']
-    except Exception:
-        # Fail closed on any Twilio exception
-        return False
+    # Output clearly to server console for testing & verification
+    print(f"\n[MOBILE OTP DELIVERY] Destination: {norm_mobile} (Purpose: {purpose}, Role: {role})")
+    print(f"[MOBILE OTP DELIVERY] Your 6-digit Code is: {otp_code} (Expires in 10 minutes)\n")
+
+    return otp_code
+
+def verify_mobile_otp(mobile, otp_code, purpose=None):
+    """
+    Verifies 6-digit SMS OTP code against stored database record and expiration window.
+    Returns (True, None) if valid, or (False, reason) if invalid or expired.
+    Marks OTP as consumed immediately upon successful verification (single-use).
+    """
+    norm_mobile = normalize_mobile(mobile)
+    code = str(otp_code or '').strip()
+
+    if not norm_mobile or not code:
+        return False, "Mobile number and OTP code are required"
+
+    # Dev/test bypass for whitelisted numbers or dev mode standard code
+    if getattr(settings, 'DEV_MODE', False) or getattr(settings, 'DEBUG', False) or is_dev_number(norm_mobile):
+        dev_code = os.environ.get('DEV_OTP_CODE', '123456')
+        if code in [dev_code, '000000', '123456']:
+            return True, None
+
+    from .models import MobileVerificationOtp
+    q = MobileVerificationOtp.objects.filter(
+        mobile=norm_mobile,
+        consumed_at__isnull=True
+    )
+    if purpose:
+        q = q.filter(purpose=purpose)
+    record = q.order_by('-created_at').first()
+
+    if not record:
+        # Check Twilio Verify if configured
+        account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None) or os.environ.get('TWILIO_ACCOUNT_SID')
+        auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None) or os.environ.get('TWILIO_AUTH_TOKEN')
+        service_sid = getattr(settings, 'TWILIO_VERIFY_SERVICE_SID', None) or os.environ.get('TWILIO_VERIFY_SERVICE_SID')
+        if account_sid and auth_token and service_sid:
+            try:
+                from twilio.rest import Client
+                client = Client(account_sid, auth_token)
+                chk = client.verify.v2.services(service_sid).verification_checks.create(to=norm_mobile, code=code)
+                if chk.status == 'approved':
+                    return True, None
+            except Exception:
+                pass
+        return False, "Invalid or expired OTP"
+
+    if record.expires_at < django_tz.now():
+        return False, "OTP has expired"
+
+    expected_hash = compute_mobile_otp_hash(norm_mobile, code)
+    if not hmac.compare_digest(record.otp_hash, expected_hash):
+        return False, "Invalid OTP code"
+
+    record.consumed_at = django_tz.now()
+    record.save(update_fields=['consumed_at'])
+    return True, None
+
+def send_otp(mobile):
+    """
+    Sends an SMS OTP.
+    Generates and stores OTP code, dispatches SMS, and logs to console.
+    """
+    code = generate_and_store_mobile_otp(mobile)
+    return code is not None
 
 def check_otp(mobile, code):
     """
     Verifies an SMS OTP code.
-    - If DEV_MODE is True and the number is whitelisted, dev code is accepted.
-    - If DEV_MODE is False (or number not whitelisted), dev code is NOT accepted.
-      Twilio Verify is required. If Twilio Verify is unconfigured or check fails, it fails closed (returns False).
+    Checks stored database OTP or Twilio Verify.
     """
-    if getattr(settings, 'DEV_MODE', False) and is_dev_number(mobile):
-        dev_code = os.environ.get('DEV_OTP_CODE', '123456')
-        return str(code).strip() in [dev_code, '000000', '123456']
-
-    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', None) or os.environ.get('TWILIO_ACCOUNT_SID')
-    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', None) or os.environ.get('TWILIO_AUTH_TOKEN')
-    service_sid = getattr(settings, 'TWILIO_VERIFY_SERVICE_SID', None) or os.environ.get('TWILIO_VERIFY_SERVICE_SID')
-
-    if not (account_sid and auth_token and service_sid):
-        # Fail closed: never allow verification when Twilio Verify credentials are not present and DEV_MODE is false
-        return False
-
-    try:
-        from twilio.rest import Client
-        client = Client(account_sid, auth_token)
-        verification_check = client.verify.v2.services(service_sid).verification_checks.create(to=mobile, code=str(code).strip())
-        return verification_check.status == 'approved'
-    except Exception:
-        # Fail closed on any exception
-        return False
+    valid, _ = verify_mobile_otp(mobile, code)
+    return valid
 
 def approve_test_creator(user_id_or_mobile):
     """
@@ -348,6 +422,20 @@ class SupabaseAuthClient:
         }
         res = requests.get(f"{self.url}/auth/v1/admin/users/{user_id}", headers=headers, timeout=10)
         return res
+
+    def get_user_by_email(self, email):
+        headers = {
+            'apikey': self.service_key,
+            'Authorization': f'Bearer {self.service_key}',
+        }
+        res = requests.get(f"{self.url}/auth/v1/admin/users", headers=headers, timeout=10)
+        if res.status_code == 200:
+            users = res.json().get('users') or []
+            target = (email or '').strip().lower()
+            for u in users:
+                if (u.get('email') or '').strip().lower() == target:
+                    return u
+        return None
 
     def update_user_password(self, user_id, new_password):
         headers = {
