@@ -14,3 +14,4 @@ urlpatterns = [
     path('admin/verifications/<str:pk>/reject', AdminVerificationRejectView.as_view(), name='admin-verifications-reject'),
     path('admin/verifications/<str:pk>/request-info', AdminVerificationRequestInfoView.as_view(), name='admin-verifications-request-info'),
 ]
+

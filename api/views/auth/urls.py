@@ -44,3 +44,4 @@ urlpatterns = [
     path('oauth/google', GoogleOAuthView.as_view(), name='auth-oauth-google'),
     path('oauth/apple', AppleOAuthView.as_view(), name='auth-oauth-apple'),
 ]
+

@@ -27,3 +27,4 @@ urlpatterns = [
     path('reporting', ReportingView.as_view(), name='reporting'),
     path('reporting/export', ReportingExportView.as_view(), name='reporting-export'),
 ]
+

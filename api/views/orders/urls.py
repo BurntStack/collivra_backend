@@ -20,3 +20,4 @@ urlpatterns = [
     path('orders/<str:pk>/approve', OrderApproveView.as_view(), name='order-approve'),
     path('orders/<str:pk>/messages', OrderMessagesView.as_view(), name='order-messages'),
 ]
+

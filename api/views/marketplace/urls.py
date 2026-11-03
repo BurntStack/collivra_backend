@@ -20,3 +20,4 @@ urlpatterns = [
     path('creators/<str:pk>/similar', CreatorSimilarView.as_view(), name='creator-similar'),
     path('creators/<str:pk>/save', CreatorSaveView.as_view(), name='creator-save'),
 ]
+

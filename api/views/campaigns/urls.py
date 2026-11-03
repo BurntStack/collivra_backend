@@ -12,3 +12,4 @@ urlpatterns = [
     path('campaigns/<str:pk>/bids', CampaignBidsView.as_view(), name='campaign-bids'),
     path('campaigns/<str:pk>/bids/<str:bid_id>/select', CampaignBidSelectView.as_view(), name='campaign-bid-select'),
 ]
+

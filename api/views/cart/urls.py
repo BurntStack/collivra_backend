@@ -12,3 +12,4 @@ urlpatterns = [
     path('cart/items/<str:pk>', CartItemDetailView.as_view(), name='cart-items-detail'),
     path('offers', OffersView.as_view(), name='offers'),
 ]
+

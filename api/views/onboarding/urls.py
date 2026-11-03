@@ -23,3 +23,4 @@ urlpatterns = [
     path('creator/verification-status', VerificationStatusView.as_view(), {'role': 'creator'}, name='creator-verification-status'),
     path('<str:role>/verification-status', VerificationStatusView.as_view(), name='role-verification-status'),
 ]
+
