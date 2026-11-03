@@ -24,9 +24,38 @@ class AuditLog(models.Model):
 
 
 class BrandProfiles(models.Model):
-    user = models.OneToOneField('Profiles', models.DB_CASCADE, primary_key=True)
+    BUSINESS_CATEGORY_CHOICES = [
+        ('Fashion & Style', 'Fashion & Style'),
+        ('Beauty & Personal Care', 'Beauty & Personal Care'),
+        ('Health & Fitness', 'Health & Fitness'),
+        ('Food & Culinary', 'Food & Culinary'),
+        ('Home & Real Estate', 'Home & Real Estate'),
+        ('Travel & Adventure', 'Travel & Adventure'),
+    ]
+
+    GEOGRAPHICAL_SCOPE_CHOICES = [
+        ('Within City', 'Within City'),
+        ('Within State', 'Within State'),
+        ('Across Country', 'Across Country'),
+        ('International', 'International'),
+    ]
+
+    user = models.OneToOneField('Profiles', models.DB_CASCADE, primary_key=True, related_name='brand_profile')
+    first_name = models.CharField(max_length=150, blank=True, null=True)
+    last_name = models.CharField(max_length=150, blank=True, null=True)
+    brand_name = models.CharField(max_length=255, blank=True, null=True)
     company_name = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField()
+    brand_logo = models.URLField(max_length=1024, blank=True, null=True)
+    brand_website = models.URLField(max_length=1024, blank=True, null=True)
+    country = models.CharField(max_length=100, default='India')
+    region_state = models.CharField(max_length=150, blank=True, null=True)
+    city = models.CharField(max_length=150, blank=True, null=True)
+    mobile = models.CharField(max_length=32, blank=True, null=True)
+    business_category = models.CharField(max_length=100, choices=BUSINESS_CATEGORY_CHOICES, blank=True, null=True)
+    geographical_scope = models.CharField(max_length=100, choices=GEOGRAPHICAL_SCOPE_CHOICES, blank=True, null=True)
+    terms_accepted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         managed = False
@@ -337,6 +366,7 @@ class Profiles(models.Model):
     failed_logins = models.IntegerField()
     locked_until = models.DateTimeField(blank=True, null=True)
     company_name = models.TextField(blank=True, null=True)
+    is_profile_completed = models.BooleanField(default=False)
 
     class Meta:
         managed = False

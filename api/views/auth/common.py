@@ -7,5 +7,6 @@ def format_user_payload(profile, email=None):
         'email': email or profile.email,
         'companyName': profile.company_name,
         'role': profile.role,
+        'isProfileCompleted': getattr(profile, 'is_profile_completed', False),
     }
 

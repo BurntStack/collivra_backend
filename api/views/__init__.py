@@ -32,7 +32,8 @@ from .dashboard import (
 from .onboarding import (
     PresignUploadView, CreatorOnboardingProfileView, SocialConnectUrlView,
     SocialCallbackView, KycIdView, KycPanView, BankView,
-    CreatorOnboardingSubmitView, VerificationStatusView
+    CreatorOnboardingSubmitView, VerificationStatusView,
+    BrandOnboardingView
 )
 from .admin import (
     AdminVerificationsListView, AdminVerificationDetailView,

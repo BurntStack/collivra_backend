@@ -470,6 +470,20 @@ class SupabaseAuthClient:
         res = requests.put(f"{self.url}/auth/v1/admin/users/{user_id}", headers=headers, json={'password': new_password}, timeout=10)
         return res
 
+    def update_user_metadata(self, user_id, user_metadata):
+        headers = {
+            'apikey': self.service_key,
+            'Authorization': f'Bearer {self.service_key}',
+            'Content-Type': 'application/json',
+        }
+        res = requests.put(
+            f"{self.url}/auth/v1/admin/users/{user_id}",
+            headers=headers,
+            json={'user_metadata': user_metadata},
+            timeout=10
+        )
+        return res
+
     def refresh_session(self, refresh_token):
         headers = {
             'apikey': self.anon_key,
