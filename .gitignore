@@ -49,5 +49,14 @@ staticfiles/
 .temp/
 supabase/.temp/
 
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.bak
+*.tmp
+*.orig
+nohup.out
+
 # Node artifacts
 node_modules/
