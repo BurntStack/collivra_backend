@@ -67,8 +67,31 @@ class CreatorAdmin(admin.ModelAdmin):
 
 @admin.register(CreatorProfiles)
 class CreatorProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'category', 'city', 'slug', 'created_at')
-    search_fields = ('user__name', 'user__email', 'category', 'city', 'slug')
+    list_display = (
+        'user_name',
+        'user_email',
+        'approval_status',
+        'kyc_status',
+        'dob',
+        'gender',
+        'category',
+        'city',
+        'region_state',
+        'pan_number',
+        'created_at',
+    )
+    list_filter = ('approval_status', 'kyc_status', 'gender', 'category', 'country', 'region_state')
+    search_fields = ('user__name', 'user__email', 'first_name', 'last_name', 'pan_number', 'city', 'region_state', 'instagram_handle')
+    readonly_fields = ('created_at', 'updated_at')
+    ordering = ('-updated_at',)
+
+    def user_name(self, obj):
+        return obj.user.name if obj.user else '-'
+    user_name.short_description = 'Name'
+
+    def user_email(self, obj):
+        return obj.user.email if obj.user else '-'
+    user_email.short_description = 'Email'
 
 
 @admin.register(CreatorPackages)

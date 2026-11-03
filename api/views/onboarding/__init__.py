@@ -13,6 +13,10 @@ from .brand_onboarding_views import (
     BrandOnboardingView,
     format_brand_profile,
 )
+from .creator_onboarding_views import (
+    CreatorOnboardingView,
+    format_creator_profile,
+)
 
 __all__ = [
     'PresignUploadView',
@@ -26,4 +30,6 @@ __all__ = [
     'VerificationStatusView',
     'BrandOnboardingView',
     'format_brand_profile',
+    'CreatorOnboardingView',
+    'format_creator_profile',
 ]

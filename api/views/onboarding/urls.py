@@ -11,9 +11,10 @@ from .views import (
     VerificationStatusView,
 )
 from .brand_onboarding_views import BrandOnboardingView
+from .creator_onboarding_views import CreatorOnboardingView
 
 urlpatterns = [
-    # Creator Onboarding & KYC
+    # Legacy Creator Onboarding & KYC Steps
     path('uploads/presign', PresignUploadView.as_view(), name='uploads-presign'),
     path('creator/onboarding/profile', CreatorOnboardingProfileView.as_view(), name='creator-onboarding-profile'),
     path('creator/social/<str:platform>/connect-url', SocialConnectUrlView.as_view(), name='social-connect-url'),
@@ -29,4 +30,8 @@ urlpatterns = [
     path('brand/onboarding', BrandOnboardingView.as_view(), name='brand-onboarding'),
     path('brand/onboarding/profile', BrandOnboardingView.as_view(), name='brand-onboarding-profile'),
     path('onboarding/brand', BrandOnboardingView.as_view(), name='onboarding-brand'),
+
+    # Creator Onboarding Unified Workflow
+    path('creator/onboarding', CreatorOnboardingView.as_view(), name='creator-onboarding'),
+    path('onboarding/creator', CreatorOnboardingView.as_view(), name='onboarding-creator'),
 ]

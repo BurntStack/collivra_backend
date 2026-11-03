@@ -33,10 +33,11 @@ from .onboarding import (
     PresignUploadView, CreatorOnboardingProfileView, SocialConnectUrlView,
     SocialCallbackView, KycIdView, KycPanView, BankView,
     CreatorOnboardingSubmitView, VerificationStatusView,
-    BrandOnboardingView
+    BrandOnboardingView, CreatorOnboardingView
 )
 from .admin import (
     AdminVerificationsListView, AdminVerificationDetailView,
     AdminVerificationApproveView, AdminVerificationRejectView,
-    AdminVerificationRequestInfoView
+    AdminVerificationRequestInfoView,
+    CreatorVerificationQueueView, CreatorApproveView, CreatorRejectView
 )

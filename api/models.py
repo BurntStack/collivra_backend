@@ -169,21 +169,66 @@ class CreatorPackages(models.Model):
 
 
 class CreatorProfiles(models.Model):
-    user = models.OneToOneField('Profiles', models.DB_CASCADE, primary_key=True)
+    GENDER_CHOICES = [
+        ('Female', 'Female'),
+        ('Male', 'Male'),
+        ('Non-Binary', 'Non-Binary'),
+        ('Prefer not to say', 'Prefer not to say'),
+        ('Other', 'Other'),
+    ]
+
+    APPROVAL_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    KYC_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('submitted', 'Submitted'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+
+    user = models.OneToOneField('Profiles', models.DB_CASCADE, primary_key=True, related_name='creator_profile')
+    first_name = models.CharField(max_length=150, blank=True, null=True)
+    last_name = models.CharField(max_length=150, blank=True, null=True)
+    dob = models.DateField(blank=True, null=True)
+    gender = models.CharField(max_length=50, choices=GENDER_CHOICES, blank=True, null=True)
+
+    # Localization & Bio
     category = models.TextField(blank=True, null=True)
     languages = ArrayField(models.TextField(), blank=True, default=list)
-    city = models.TextField(blank=True, null=True)
+    city = models.CharField(max_length=150, blank=True, null=True)
+    region_state = models.CharField(max_length=150, blank=True, null=True)
+    country = models.CharField(max_length=100, default='India')
     topics = ArrayField(models.TextField(), blank=True, default=list)
     headline = models.TextField(blank=True, null=True)
     bio = models.TextField(blank=True, null=True)
-    visibility = models.JSONField()
+
+    # Social Handles & Links
+    instagram_handle = models.CharField(max_length=150, blank=True, null=True)
+    youtube_handle = models.CharField(max_length=150, blank=True, null=True)
+    tiktok_handle = models.CharField(max_length=150, blank=True, null=True)
+    social_links = models.JSONField(default=dict, blank=True)
+
+    # KYC & Verification
+    pan_number = models.CharField(max_length=20, blank=True, null=True)
+    kyc_status = models.CharField(max_length=32, choices=KYC_STATUS_CHOICES, default='pending')
+
+    # Marketplace Status
+    approval_status = models.CharField(max_length=32, choices=APPROVAL_STATUS_CHOICES, default='pending')
+    visibility = models.JSONField(default=dict, blank=True)
     slug = models.TextField(unique=True, blank=True, null=True)
-    created_at = models.DateTimeField()
-    updated_at = models.DateTimeField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         managed = False
         db_table = 'creator_profiles'
+        verbose_name = 'Creator Profile'
+        verbose_name_plural = 'Creator Profiles'
 
 
 class CreatorReviews(models.Model):
@@ -369,6 +414,7 @@ class Profiles(models.Model):
     locked_until = models.DateTimeField(blank=True, null=True)
     company_name = models.TextField(blank=True, null=True)
     is_profile_completed = models.BooleanField(default=False)
+    approval_status = models.CharField(max_length=32, default='pending')
 
     class Meta:
         managed = False

@@ -8,5 +8,6 @@ def format_user_payload(profile, email=None):
         'companyName': profile.company_name,
         'role': profile.role,
         'isProfileCompleted': getattr(profile, 'is_profile_completed', False),
+        'approvalStatus': getattr(profile, 'approval_status', 'pending'),
     }
 
