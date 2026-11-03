@@ -1,4 +1,4 @@
-from .auth_views import (
+from .auth import (
     HealthCheckView, SignupView, RequestEmailOtpView, VerifyAndRegisterView,
     SignupEmailView, SignupVerifyEmailView, SignupCompleteView,
     EmailOtpTestUIView,

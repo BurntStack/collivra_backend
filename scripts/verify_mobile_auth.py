@@ -59,7 +59,11 @@ if __name__ == '__main__':
 
 def test_mobile_signup_complete():
     client = APIClient()
-    test_mobile = "+919876543299"
+    import random
+    rand_suffix = random.randint(1000, 9999)
+    test_mobile = f"+91987654{rand_suffix}"
+    Profile.objects.filter(mobile=test_mobile).delete()
+    MobileVerificationOtp.objects.filter(mobile=test_mobile).delete()
 
     print("\n--- 5. Testing 3-Step Mobile Signup Flow ---")
     res1 = client.post('/api/v1/auth/mobile/request-otp', {'mobile': test_mobile, 'purpose': 'signup', 'role': 'creator'}, format='json')

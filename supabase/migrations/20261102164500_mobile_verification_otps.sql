@@ -16,3 +16,4 @@ CREATE INDEX IF NOT EXISTS idx_mobile_otp_lookup ON public.mobile_verification_o
 ALTER TABLE public.mobile_verification_otps ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.mobile_verification_otps FROM anon, authenticated;
 GRANT ALL PRIVILEGES ON public.mobile_verification_otps TO postgres, service_role, collivra_app;
+
