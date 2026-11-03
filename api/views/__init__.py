@@ -6,37 +6,36 @@ from .auth import (
     MeView, RefreshView, ForgotPasswordView, ResetPasswordView,
     ChangePasswordView, LogoutView, GoogleOAuthView, AppleOAuthView
 )
-from .marketplace_views import (
+from .marketplace import (
     CreatorSuggestionsView, CreatorFiltersView, CreatorListView,
     CreatorDetailView, CreatorPackagesView, CreatorReviewsView,
-    CreatorSimilarView, CreatorSaveView
+    CreatorSimilarView, CreatorSaveView, format_creator_card
 )
-from .cart_views import (
-    CartView, CartItemCreateView, CartItemDetailView, OffersView
+from .cart import (
+    CartView, CartItemCreateView, CartItemDetailView, OffersView, get_full_cart
 )
-from .campaign_views import (
+from .campaigns import (
     CampaignListCreateView, CampaignDetailView, CampaignBidsView,
     CampaignBidSelectView
 )
-from .order_views import (
+from .orders import (
     OrderListCreateView, OrderDetailView, OrderPayView,
     OrderConfirmStubView, OrderSubmitDraftView, OrderRequestChangesView,
-    OrderApproveView, OrderMessagesView
+    OrderApproveView, OrderMessagesView, format_order
 )
-from .dashboard_views import (
+from .dashboard import (
     DashboardSummaryView, DashboardTodoView, ShortlistListCreateView,
     ShortlistDetailView, ShortlistCreatorManageView, ShortlistDuplicateView,
     DeliverablesListView, DeliverableDetailView, DeliverablesExportView,
     ReportingView, ReportingExportView
 )
-from .onboarding_views import (
+from .onboarding import (
     PresignUploadView, CreatorOnboardingProfileView, SocialConnectUrlView,
     SocialCallbackView, KycIdView, KycPanView, BankView,
     CreatorOnboardingSubmitView, VerificationStatusView
 )
-from .admin_views import (
+from .admin import (
     AdminVerificationsListView, AdminVerificationDetailView,
     AdminVerificationApproveView, AdminVerificationRejectView,
     AdminVerificationRequestInfoView
 )
-

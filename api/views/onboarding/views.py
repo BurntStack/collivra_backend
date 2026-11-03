@@ -8,12 +8,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
-from ..models import (
+from ...models import (
     Upload, CreatorProfile, CreatorKyc, SocialAccount,
     VerificationRequest, Profile
 )
-from ..permissions import IsCreatorOnboarding
-from ..services import (
+from ...permissions import IsCreatorOnboarding
+from ...services import (
     encrypt_field, verify_pan, verify_bank, verify_id_doc,
     sign_social_state, verify_social_state
 )

@@ -7,9 +7,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from ..models import Campaign, CampaignBid, Order, Creator, Profile, CreatorProfile
-from ..permissions import IsBrandUser, IsCreatorUser, IsActiveCreator
-from ..services import is_valid_uuid
+from ...models import Campaign, CampaignBid, Order, Creator, Profile, CreatorProfile
+from ...permissions import IsBrandUser, IsCreatorUser, IsActiveCreator
+from ...services import is_valid_uuid
 
 
 class CampaignListCreateView(APIView):

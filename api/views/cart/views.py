@@ -5,10 +5,10 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
-from ..models import CartItem, Creator, CreatorPackage, CustomOffer, Profile
-from ..permissions import IsBrandUser
-from ..services import is_valid_uuid
-from .marketplace_views import format_creator_card
+from ...models import CartItem, Creator, CreatorPackage, CustomOffer, Profile
+from ...permissions import IsBrandUser
+from ...services import is_valid_uuid
+from ..marketplace import format_creator_card
 
 def get_full_cart(user_id):
     items_qs = CartItem.objects.filter(user_id=user_id).select_related('creator', 'package').order_by('created_at')

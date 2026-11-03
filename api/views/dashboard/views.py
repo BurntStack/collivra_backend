@@ -8,13 +8,13 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
-from ..models import (
+from ...models import (
     Shortlist, ShortlistCreator, Creator, Deliverable,
     Order, Campaign, BrandTodo, Profile
 )
-from ..permissions import IsBrandUser
-from ..services import is_valid_uuid
-from .marketplace_views import format_creator_card
+from ...permissions import IsBrandUser
+from ...services import is_valid_uuid
+from ..marketplace import format_creator_card
 
 DEFAULT_TODOS = [
     {'id': 'hire-creator', 'label': 'Hire your first creator', 'done': False},

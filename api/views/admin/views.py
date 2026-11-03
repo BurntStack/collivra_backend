@@ -8,12 +8,12 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
-from ..models import (
+from ...models import (
     VerificationRequest, Profile, CreatorProfile, CreatorKyc,
     SocialAccount, Creator, AuditLog, Upload
 )
-from ..permissions import IsAdminUser
-from ..services import is_valid_uuid
+from ...permissions import IsAdminUser
+from ...services import is_valid_uuid
 
 
 class AdminVerificationsListView(APIView):

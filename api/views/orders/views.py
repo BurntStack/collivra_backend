@@ -7,11 +7,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from ..models import Order, OrderMessage, Creator, CreatorPackage, Profile
-from ..permissions import IsBrandUser, IsActiveCreator, IsMarketplaceParticipant, is_valid_admin
-from ..services import is_valid_uuid
+from ...models import Order, OrderMessage, Creator, CreatorPackage, Profile
+from ...permissions import IsBrandUser, IsActiveCreator, IsMarketplaceParticipant, is_valid_admin
+from ...services import is_valid_uuid
 
-from .marketplace_views import format_creator_card
+from ..marketplace import format_creator_card
 
 def format_order(o):
     creator_card = format_creator_card(o.creator) if o.creator else {'id': str(o.creator_id)}

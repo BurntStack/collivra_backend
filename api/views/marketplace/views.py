@@ -7,8 +7,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 
-from ..models import Creator, CreatorPackage, CreatorReview, SavedCreator, Profile
-from ..permissions import IsBrandUser, IsMarketplaceParticipant
+from ...models import Creator, CreatorPackage, CreatorReview, SavedCreator, Profile
+from ...permissions import IsBrandUser, IsMarketplaceParticipant
 
 
 def format_creator_card(c):
