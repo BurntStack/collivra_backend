@@ -90,6 +90,8 @@ class CampaignBids(models.Model):
     class Meta:
         managed = False
         db_table = 'campaign_bids'
+        verbose_name = 'Campaign Bid'
+        verbose_name_plural = 'Campaign Bids'
 
 
 class Campaigns(models.Model):
@@ -110,6 +112,8 @@ class Campaigns(models.Model):
     class Meta:
         managed = False
         db_table = 'campaigns'
+        verbose_name = 'Campaign'
+        verbose_name_plural = 'Campaigns'
 
 
 class CartItems(models.Model):
@@ -124,6 +128,8 @@ class CartItems(models.Model):
     class Meta:
         managed = False
         db_table = 'cart_items'
+        verbose_name = 'Cart Item'
+        verbose_name_plural = 'Cart Items'
         unique_together = (('user', 'creator', 'package'),)
 
 
@@ -166,6 +172,8 @@ class CreatorPackages(models.Model):
     class Meta:
         managed = False
         db_table = 'creator_packages'
+        verbose_name = 'Creator Package'
+        verbose_name_plural = 'Creator Packages'
 
 
 class CreatorProfiles(models.Model):
@@ -244,6 +252,8 @@ class CreatorReviews(models.Model):
     class Meta:
         managed = False
         db_table = 'creator_reviews'
+        verbose_name = 'Creator Review'
+        verbose_name_plural = 'Creator Reviews'
 
 
 class Creators(models.Model):
@@ -276,6 +286,8 @@ class Creators(models.Model):
     class Meta:
         managed = False
         db_table = 'creators'
+        verbose_name = 'Marketplace Creator'
+        verbose_name_plural = 'Marketplace Creators (Catalog)'
 
 
 class CustomOffers(models.Model):
@@ -293,6 +305,8 @@ class CustomOffers(models.Model):
     class Meta:
         managed = False
         db_table = 'custom_offers'
+        verbose_name = 'Custom Offer'
+        verbose_name_plural = 'Custom Offers'
 
 
 class Deliverables(models.Model):
@@ -314,6 +328,8 @@ class Deliverables(models.Model):
     class Meta:
         managed = False
         db_table = 'deliverables'
+        verbose_name = 'Deliverable'
+        verbose_name_plural = 'Deliverables'
 
 
 class OrderMessages(models.Model):
@@ -329,6 +345,8 @@ class OrderMessages(models.Model):
     class Meta:
         managed = False
         db_table = 'order_messages'
+        verbose_name = 'Order Message'
+        verbose_name_plural = 'Order Messages'
 
 
 class Orders(models.Model):
@@ -354,6 +372,8 @@ class Orders(models.Model):
     class Meta:
         managed = False
         db_table = 'orders'
+        verbose_name = 'Order'
+        verbose_name_plural = 'Orders'
 
 
 class OtpSendLog(models.Model):
@@ -467,6 +487,8 @@ class Shortlists(models.Model):
     class Meta:
         managed = False
         db_table = 'shortlists'
+        verbose_name = 'Shortlist'
+        verbose_name_plural = 'Shortlists'
 
 
 class SocialAccounts(models.Model):
@@ -520,6 +542,8 @@ class VerificationRequests(models.Model):
     class Meta:
         managed = False
         db_table = 'verification_requests'
+        verbose_name = 'Verification Request'
+        verbose_name_plural = 'Verification Requests'
 
 
 # Convenience aliases
