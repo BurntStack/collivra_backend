@@ -19,3 +19,4 @@ ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 GRANT ALL PRIVILEGES ON public.brand_profiles TO postgres, service_role, collivra_app;
 GRANT ALL PRIVILEGES ON public.profiles TO postgres, service_role, collivra_app;
+

@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import (
     Profiles,
+    BrandProfiles,
     Creators,
     CreatorPackages,
     CreatorReviews,
@@ -11,6 +12,7 @@ from .models import (
     OrderMessages,
     VerificationRequests,
     EmailVerificationOtp,
+    MobileVerificationOtp,
     AuditLog,
     CartItems,
     CustomOffers,
@@ -21,11 +23,38 @@ from .models import (
 
 @admin.register(Profiles)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'email', 'role', 'status', 'company_name', 'created_at')
-    list_filter = ('role', 'status', 'created_at')
+    list_display = ('id', 'name', 'email', 'role', 'status', 'is_profile_completed', 'company_name', 'created_at')
+    list_filter = ('role', 'status', 'is_profile_completed', 'created_at')
     search_fields = ('name', 'email', 'company_name', 'mobile')
     readonly_fields = ('id', 'created_at', 'updated_at')
     ordering = ('-created_at',)
+
+
+@admin.register(BrandProfiles)
+class BrandProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        'brand_name',
+        'user_name',
+        'user_email',
+        'business_category',
+        'geographical_scope',
+        'region_state',
+        'city',
+        'terms_accepted',
+        'updated_at',
+    )
+    list_filter = ('business_category', 'geographical_scope', 'terms_accepted', 'country', 'region_state')
+    search_fields = ('brand_name', 'company_name', 'user__name', 'user__email', 'city', 'region_state', 'mobile')
+    readonly_fields = ('created_at', 'updated_at')
+    ordering = ('-updated_at',)
+
+    def user_name(self, obj):
+        return obj.user.name if obj.user else '-'
+    user_name.short_description = 'User Name'
+
+    def user_email(self, obj):
+        return obj.user.email if obj.user else '-'
+    user_email.short_description = 'Email'
 
 
 @admin.register(Creators)
@@ -99,6 +128,15 @@ class EmailVerificationOtpAdmin(admin.ModelAdmin):
     list_display = ('id', 'email', 'role', 'expires_at', 'consumed_at', 'created_at')
     list_filter = ('role', 'created_at')
     search_fields = ('email',)
+    readonly_fields = ('id', 'otp_hash', 'created_at')
+    ordering = ('-created_at',)
+
+
+@admin.register(MobileVerificationOtp)
+class MobileVerificationOtpAdmin(admin.ModelAdmin):
+    list_display = ('id', 'mobile', 'role', 'purpose', 'expires_at', 'consumed_at', 'created_at')
+    list_filter = ('role', 'purpose', 'created_at')
+    search_fields = ('mobile',)
     readonly_fields = ('id', 'otp_hash', 'created_at')
     ordering = ('-created_at',)
 

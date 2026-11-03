@@ -159,3 +159,4 @@ class BrandOnboardingView(APIView):
             'user': format_user_payload(profile),
             'brandProfile': format_brand_profile(brand_profile),
         }, status=status.HTTP_200_OK)
+

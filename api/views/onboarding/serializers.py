@@ -85,3 +85,4 @@ class BrandOnboardingSerializer(serializers.ModelSerializer):
         if not val.startswith(('http://', 'https://')):
             val = f'https://{val}'
         return val
+

@@ -60,6 +60,8 @@ class BrandProfiles(models.Model):
     class Meta:
         managed = False
         db_table = 'brand_profiles'
+        verbose_name = 'Brand Profile'
+        verbose_name_plural = 'Brand Profiles'
 
 
 class BrandTodos(models.Model):
@@ -371,6 +373,8 @@ class Profiles(models.Model):
     class Meta:
         managed = False
         db_table = 'profiles'
+        verbose_name = 'Profile'
+        verbose_name_plural = 'Profiles'
         unique_together = (('mobile', 'role'),)
 
 
