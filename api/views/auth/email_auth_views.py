@@ -803,6 +803,85 @@ class EmailOtpTestUIView(APIView):
         <button class="btn" onclick="testLogin()">Log In</button>
         <div id="login-result" class="result"></div>
       </div>
+
+      <!-- Step 4: Onboarding -->
+      <div class="card" id="onboarding-card">
+        <div class="card-title">
+          <span id="onboarding-title">Step 4: Brand Onboarding</span>
+          <span class="step-pill" id="onboarding-pill">POST /api/v1/brand/onboarding</span>
+        </div>
+
+        <!-- BRAND ONBOARDING FIELDS -->
+        <div id="brand-onboarding-fields">
+          <div class="form-group"><label>Brand Name *</label><input type="text" id="b-brand-name" placeholder="e.g. Silk & Soul Apparel" value="Silk & Soul"></div>
+          <div class="form-group"><label>First Name</label><input type="text" id="b-first-name" placeholder="e.g. Pooja" value="Pooja"></div>
+          <div class="form-group"><label>Last Name</label><input type="text" id="b-last-name" placeholder="e.g. Hegde" value="Hegde"></div>
+          <div class="form-group"><label>Brand Logo URL</label><input type="text" id="b-brand-logo" placeholder="https://..."></div>
+          <div class="form-group"><label>Brand Website</label><input type="text" id="b-brand-website" placeholder="https://yourbrand.in"></div>
+          <div class="form-group"><label>Mobile</label><input type="text" id="b-mobile" placeholder="+919876543210"></div>
+          <div class="form-group"><label>City</label><input type="text" id="b-city" placeholder="Bengaluru" value="Bengaluru"></div>
+          <div class="form-group"><label>State / Region *</label><input type="text" id="b-region-state" placeholder="Karnataka" value="Karnataka"></div>
+          <div class="form-group"><label>Country</label><input type="text" id="b-country" value="India"></div>
+          <div class="form-group">
+            <label>Business Category *</label>
+            <select id="b-business-category">
+              <option>Fashion & Style</option>
+              <option>Beauty & Personal Care</option>
+              <option>Health & Fitness</option>
+              <option>Food & Culinary</option>
+              <option>Home & Real Estate</option>
+              <option>Travel & Adventure</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Geographical Scope *</label>
+            <select id="b-geographical-scope">
+              <option>Within City</option>
+              <option>Within State</option>
+              <option>Across Country</option>
+              <option>International</option>
+            </select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="b-terms" checked style="width:auto;">
+            <label style="margin:0;text-transform:none;">I accept the Terms & Conditions</label>
+          </div>
+        </div>
+
+        <!-- CREATOR ONBOARDING FIELDS -->
+        <div id="creator-onboarding-fields" style="display:none;">
+          <div class="form-group"><label>First Name</label><input type="text" id="c-first-name" placeholder="Ananya" value="Ananya"></div>
+          <div class="form-group"><label>Last Name</label><input type="text" id="c-last-name" placeholder="Verma" value="Verma"></div>
+          <div class="form-group"><label>Date of Birth * (must be 18+)</label><input type="date" id="c-dob" value="2001-05-20"></div>
+          <div class="form-group">
+            <label>Gender</label>
+            <select id="c-gender">
+              <option value="">Prefer not to say</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Non-binary">Non-binary</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Category</label><input type="text" id="c-category" placeholder="Fashion & Styling" value="Fashion & Styling"></div>
+          <div class="form-group"><label>Bio</label><textarea id="c-bio" placeholder="Tell brands about yourself..." style="width:100%;background:#0b0f19;border:1px solid #334155;color:#fff;padding:9px 12px;border-radius:6px;font-size:14px;min-height:80px;">Sustainable fashion enthusiast sharing weekly styling tips.</textarea></div>
+          <div class="form-group"><label>Languages (comma-separated)</label><input type="text" id="c-languages" placeholder="Hindi, English" value="Hindi, English"></div>
+          <div class="form-group"><label>City *</label><input type="text" id="c-city" placeholder="Bengaluru" value="Bengaluru"></div>
+          <div class="form-group"><label>State / Region *</label><input type="text" id="c-region-state" placeholder="Karnataka" value="Karnataka"></div>
+          <div class="form-group"><label>Country</label><input type="text" id="c-country" value="India"></div>
+          <div class="form-group"><label>Instagram Handle</label><input type="text" id="c-instagram" placeholder="@myhandle" value="@ananya_looks"></div>
+          <div class="form-group"><label>YouTube Handle</label><input type="text" id="c-youtube" placeholder="@mychannel" value="@ananyalooks"></div>
+          <div class="form-group"><label>TikTok Handle</label><input type="text" id="c-tiktok" placeholder="@myhandle"></div>
+          <div class="form-group"><label>PAN Number (optional)</label><input type="text" id="c-pan" placeholder="ABCDE1234F"></div>
+        </div>
+
+        <div class="form-group" style="margin-top:8px;">
+          <label>JWT Token (auto-filled after login)</label>
+          <input type="text" id="onboarding-token" placeholder="Paste your Bearer token here if not auto-filled">
+        </div>
+
+        <button class="btn btn-green" onclick="submitOnboarding()" style="margin-top:4px;">Submit Onboarding Profile</button>
+        <div id="onboarding-result" class="result"></div>
+      </div>
     </div>
   </div>
 
@@ -823,9 +902,19 @@ class EmailOtpTestUIView(APIView):
       const role = document.getElementById('req-role').value;
       const companyGroup = document.getElementById('company-group');
       companyGroup.style.display = role === 'brand' ? 'block' : 'none';
+      // Update onboarding section heading
+      updateOnboardingSection(role);
     }
     // Run once on load to set initial state
     onRoleChange();
+
+    function updateOnboardingSection(role) {
+      const isBrand = role === 'brand';
+      document.getElementById('onboarding-title').textContent = isBrand ? 'Step 4: Brand Onboarding' : 'Step 4: Creator Onboarding';
+      document.getElementById('onboarding-pill').textContent = isBrand ? 'POST /api/v1/brand/onboarding' : 'POST /api/v1/creator/onboarding';
+      document.getElementById('brand-onboarding-fields').style.display = isBrand ? 'block' : 'none';
+      document.getElementById('creator-onboarding-fields').style.display = isBrand ? 'none' : 'block';
+    }
 
     async function requestMobileOtp() {
       const mobile = document.getElementById('mobile-number').value.trim();
@@ -980,6 +1069,11 @@ class EmailOtpTestUIView(APIView):
         if (res.ok) {
           resEl.className = 'result success';
           resEl.textContent = `Status: 200 OK (Logged In successfully!)\n` + JSON.stringify(data, null, 2);
+          // Auto-fill token and update onboarding section
+          const token = data.token || (data.session && data.session.access_token) || '';
+          if (token) document.getElementById('onboarding-token').value = token;
+          const role = document.getElementById('req-role').value;
+          updateOnboardingSection(role);
         } else {
           resEl.className = 'result error';
           resEl.textContent = `Status: ${res.status} Error\n` + JSON.stringify(data, null, 2);
@@ -988,6 +1082,72 @@ class EmailOtpTestUIView(APIView):
         resEl.style.display = 'block';
         resEl.className = 'result error';
         resEl.textContent = 'Login failed: ' + err.message;
+      }
+    }
+
+    async function submitOnboarding() {
+      const role = document.getElementById('req-role').value;
+      const token = document.getElementById('onboarding-token').value.trim();
+      const resEl = document.getElementById('onboarding-result');
+      if (!token) { alert('Please log in first to get a JWT token (Step 3)'); return; }
+
+      let url, body;
+      if (role === 'brand') {
+        url = '/api/v1/brand/onboarding';
+        body = {
+          brandName: document.getElementById('b-brand-name').value.trim(),
+          firstName: document.getElementById('b-first-name').value.trim(),
+          lastName: document.getElementById('b-last-name').value.trim(),
+          brandLogo: document.getElementById('b-brand-logo').value.trim() || undefined,
+          brandWebsite: document.getElementById('b-brand-website').value.trim() || undefined,
+          mobile: document.getElementById('b-mobile').value.trim() || undefined,
+          city: document.getElementById('b-city').value.trim(),
+          regionState: document.getElementById('b-region-state').value.trim(),
+          country: document.getElementById('b-country').value.trim() || 'India',
+          businessCategory: document.getElementById('b-business-category').value,
+          geographicalScope: document.getElementById('b-geographical-scope').value,
+          termsAccepted: document.getElementById('b-terms').checked,
+        };
+      } else {
+        url = '/api/v1/creator/onboarding';
+        const langs = document.getElementById('c-languages').value;
+        body = {
+          firstName: document.getElementById('c-first-name').value.trim(),
+          lastName: document.getElementById('c-last-name').value.trim(),
+          dateOfBirth: document.getElementById('c-dob').value,
+          gender: document.getElementById('c-gender').value || undefined,
+          category: document.getElementById('c-category').value.trim() || undefined,
+          bio: document.getElementById('c-bio').value.trim() || undefined,
+          languages: langs ? langs.split(',').map(l => l.trim()).filter(Boolean) : [],
+          city: document.getElementById('c-city').value.trim(),
+          regionState: document.getElementById('c-region-state').value.trim(),
+          country: document.getElementById('c-country').value.trim() || 'India',
+          instagramHandle: document.getElementById('c-instagram').value.trim() || undefined,
+          youtubeHandle: document.getElementById('c-youtube').value.trim() || undefined,
+          tiktokHandle: document.getElementById('c-tiktok').value.trim() || undefined,
+          panNumber: document.getElementById('c-pan').value.trim() || undefined,
+        };
+      }
+
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        resEl.style.display = 'block';
+        if (res.ok) {
+          resEl.className = 'result success';
+          resEl.textContent = `✅ Status: ${res.status} — Onboarding complete!\n` + JSON.stringify(data, null, 2);
+        } else {
+          resEl.className = 'result error';
+          resEl.textContent = `❌ Status: ${res.status} Error\n` + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        resEl.style.display = 'block';
+        resEl.className = 'result error';
+        resEl.textContent = 'Onboarding failed: ' + err.message;
       }
     }
   </script>
