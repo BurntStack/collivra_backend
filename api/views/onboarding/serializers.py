@@ -87,6 +87,16 @@ class BrandOnboardingSerializer(serializers.ModelSerializer):
             val = f'https://{val}'
         return val
 
+    def validate_mobile(self, value):
+        val = (value or '').strip()
+        if not val:
+            return None
+        from ...services import normalize_mobile
+        norm = normalize_mobile(val)
+        if not norm:
+            raise serializers.ValidationError('Invalid mobile number. Please enter a valid 10-digit Indian mobile number.')
+        return norm
+
 
 class CreatorOnboardingSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True, allow_null=True)

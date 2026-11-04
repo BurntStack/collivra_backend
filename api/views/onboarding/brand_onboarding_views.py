@@ -98,6 +98,8 @@ class BrandOnboardingView(APIView):
         region_state = (validated.get('region_state') or '').strip()
         city = (validated.get('city') or '').strip()
         mobile = (validated.get('mobile') or '').strip()
+        from ...services import normalize_mobile
+        norm_mobile = normalize_mobile(mobile) if mobile else None
         business_category = validated.get('business_category')
         geographical_scope = validated.get('geographical_scope')
         terms_accepted = bool(validated.get('terms_accepted'))
@@ -117,7 +119,7 @@ class BrandOnboardingView(APIView):
                 'country': country,
                 'region_state': region_state,
                 'city': city or None,
-                'mobile': mobile or profile.mobile,
+                'mobile': norm_mobile or profile.mobile,
                 'business_category': business_category,
                 'geographical_scope': geographical_scope,
                 'terms_accepted': terms_accepted,
@@ -133,8 +135,8 @@ class BrandOnboardingView(APIView):
         profile.company_name = brand_name
         profile.is_profile_completed = True
         profile.status = 'active'
-        if mobile and not profile.mobile:
-            profile.mobile = mobile
+        if norm_mobile and not profile.mobile:
+            profile.mobile = norm_mobile
         if terms_accepted and not profile.terms_accepted_at:
             profile.terms_accepted_at = now
             profile.terms_version = 'v1.0'
