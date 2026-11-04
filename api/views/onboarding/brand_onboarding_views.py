@@ -100,6 +100,17 @@ class BrandOnboardingView(APIView):
         mobile = (validated.get('mobile') or '').strip()
         from ...services import normalize_mobile
         norm_mobile = normalize_mobile(mobile) if mobile else None
+
+        # Check if mobile is already taken by another brand account
+        if norm_mobile and norm_mobile != profile.mobile:
+            existing = Profile.objects.filter(mobile=norm_mobile, role='brand').exclude(id=profile.id).first()
+            if existing:
+                return Response({
+                    'error': {'code': 'mobile_taken', 'message': 'This mobile number is already linked to another brand account.'},
+                    'message': 'This mobile number is already linked to another brand account.',
+                    'code': 'mobile_taken',
+                }, status=status.HTTP_409_CONFLICT)
+
         business_category = validated.get('business_category')
         geographical_scope = validated.get('geographical_scope')
         terms_accepted = bool(validated.get('terms_accepted'))
