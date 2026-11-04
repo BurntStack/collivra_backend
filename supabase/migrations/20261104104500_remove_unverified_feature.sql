@@ -114,3 +114,4 @@ WHERE status = 'unverified' OR approval_status = 'pending';
 UPDATE public.creator_profiles
 SET approval_status = 'approved', kyc_status = 'verified'
 WHERE approval_status = 'pending' OR kyc_status in ('pending', 'submitted');
+

@@ -233,6 +233,44 @@ def compute_email_otp_hash(email, otp_code):
     return hashlib.sha256(f"{email.lower().strip()}:{str(otp_code).strip()}:{salt}".encode('utf-8')).hexdigest()
 
 def _dispatch_email(email, otp_code):
+    resend_key = getattr(settings, 'RESEND_API_KEY', None) or os.environ.get('RESEND_API_KEY')
+    if resend_key:
+        try:
+            from_email = getattr(settings, 'RESEND_FROM_EMAIL', None) or os.environ.get('RESEND_FROM_EMAIL') or 'Collivra <onboarding@resend.dev>'
+            html_content = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px; background: #0b0f19; color: #f1f5f9; border-radius: 12px; border: 1px solid #1e293b;">
+                <h1 style="color: #38bdf8; font-size: 22px; margin-bottom: 8px;">Collivra Verification Code</h1>
+                <p style="color: #94a3b8; font-size: 14px; margin-bottom: 24px;">Use the verification code below to complete your authentication:</p>
+                <div style="background: #131c2e; border: 1px dashed #38bdf8; color: #38bdf8; padding: 18px; border-radius: 8px; font-size: 32px; font-weight: 700; letter-spacing: 8px; text-align: center; margin-bottom: 24px;">
+                    {otp_code}
+                </div>
+                <p style="color: #64748b; font-size: 12px; line-height: 1.5;">This code will expire in 10 minutes.<br>If you did not request this verification code, please disregard this email.</p>
+            </div>
+            """
+            res = requests.post(
+                'https://api.resend.com/emails',
+                headers={
+                    'Authorization': f'Bearer {resend_key}',
+                    'Content-Type': 'application/json',
+                },
+                json={
+                    'from': from_email,
+                    'to': [email],
+                    'subject': f'{otp_code} is your Collivra verification code',
+                    'html': html_content,
+                    'text': f'Your verification code is: {otp_code}. It is valid for 10 minutes.',
+                },
+                timeout=10,
+            )
+            if res.status_code in [200, 201]:
+                print(f"[RESEND EMAIL DISPATCH SUCCESS] Real email sent to {email} via HTTPS (id: {res.json().get('id')})")
+                return
+            else:
+                print(f"[RESEND EMAIL DISPATCH NOTICE] Status {res.status_code}: {res.text}")
+        except Exception as e:
+            print(f"[RESEND EMAIL DISPATCH ERROR] {e}")
+
+    # Fallback to SMTP if configured and no Resend success
     try:
         from django.core.mail import send_mail
         send_mail(
@@ -248,13 +286,12 @@ def _dispatch_email(email, otp_code):
 
 def send_email_otp(email, otp_code):
     """
-    Sends an email OTP via SMTP or Supabase Auth.
+    Sends an email OTP via Resend HTTPS API or SMTP.
     Dispatches in background thread so HTTP responses never hang or time out.
     """
     import threading
-    if getattr(settings, 'EMAIL_HOST', None):
-        t = threading.Thread(target=_dispatch_email, args=(email, otp_code), daemon=True)
-        t.start()
+    t = threading.Thread(target=_dispatch_email, args=(email, otp_code), daemon=True)
+    t.start()
 
     # Print to server console for testing
     print(f"\n[EMAIL OTP DELIVERY] Destination: {email}")
