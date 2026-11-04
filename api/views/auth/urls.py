@@ -29,6 +29,14 @@ urlpatterns = [
     path('signup/complete', SignupCompleteView.as_view(), name='auth-signup-complete'),
     path('signup/request-otp', RequestEmailOtpView.as_view(), name='auth-signup-request-otp'),
     path('signup/verify-and-register', VerifyAndRegisterView.as_view(), name='auth-signup-verify-and-register'),
+    # Email OTP aliases
+    path('email/request-otp', RequestEmailOtpView.as_view(), name='auth-email-request-otp'),
+    path('email/send-otp', RequestEmailOtpView.as_view(), name='auth-email-send-otp'),
+    path('email/verify-otp', VerifyAndRegisterView.as_view(), name='auth-email-verify-otp'),
+    path('email/verify', VerifyAndRegisterView.as_view(), name='auth-email-verify'),
+    path('otp/email/send', RequestEmailOtpView.as_view(), name='auth-otp-email-send'),
+    path('otp/email/verify', VerifyAndRegisterView.as_view(), name='auth-otp-email-verify'),
+    # Mobile OTP
     path('otp/send', OtpSendView.as_view(), name='auth-otp-send'),
     path('otp/verify', OtpVerifyView.as_view(), name='auth-otp-verify'),
     path('mobile/request-otp', OtpSendView.as_view(), name='auth-mobile-request-otp'),

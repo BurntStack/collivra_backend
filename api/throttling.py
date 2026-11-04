@@ -6,7 +6,13 @@ class BaseIpRateThrottle(SimpleRateThrottle):
     """
     Base throttle that checks HTTP_CF_CONNECTING_IP (if behind Cloudflare)
     before falling back to DRF get_ident (which applies NUM_PROXIES on X-Forwarded-For).
+    Bypasses rate limits in DEV_MODE or DEBUG so developers are not blocked with HTTP 429.
     """
+    def allow_request(self, request, view):
+        if getattr(settings, 'DEV_MODE', False) or getattr(settings, 'DEBUG', False):
+            return True
+        return super().allow_request(request, view)
+
     def get_ident(self, request):
         cf_ip = request.META.get('HTTP_CF_CONNECTING_IP')
         if cf_ip:
