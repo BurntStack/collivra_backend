@@ -21,7 +21,7 @@ class SupabaseUser:
         self.pk = self.id
         self.email = email
         self.role = role or 'brand'
-        self.status = status or 'unverified'
+        self.status = status or 'active'
         self.raw_claims = raw_claims or {}
         self.is_authenticated = True
         self.is_anonymous = False
@@ -90,7 +90,7 @@ class SupabaseAuthentication(authentication.BaseAuthentication):
             metadata = user_claims.get('user_metadata') or {}
             role = metadata.get('role', 'brand')
         if not user_status:
-            user_status = 'active' if role == 'brand' else 'unverified'
+            user_status = 'active'
 
         # Safeguard: strictly bind admin/super_admin privileges to socials@burntstack.com (or test_admin in DEBUG)
         is_allowed_admin = (email or '').strip().lower() == 'socials@burntstack.com' or (

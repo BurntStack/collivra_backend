@@ -200,3 +200,4 @@ class CreatorRejectView(APIView):
             'reason': reason,
             'creator': serialize_creator_in_queue(creator_profile),
         }, status=status.HTTP_200_OK)
+

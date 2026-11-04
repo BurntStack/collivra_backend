@@ -183,8 +183,8 @@ class VerifyAndRegisterView(APIView):
         signin_data = signin_res.json() if signin_res.content else {}
         token = signin_data.get('access_token')
 
-        # Update profile status ('active' for brands, 'unverified' for creators)
-        target_status = 'active' if role == 'brand' else 'unverified'
+        # Update profile status to active
+        target_status = 'active'
         profile = Profile.objects.filter(id=user_id).first()
         if profile:
             profile.role = role
@@ -456,8 +456,8 @@ class SignupCompleteView(APIView):
         signin_data = signin_res.json() if signin_res.content else {}
         token = signin_data.get('access_token')
 
-        # Update profile status ('active' for brands, 'unverified' for creators)
-        target_status = 'active' if role == 'brand' else 'unverified'
+        # Update profile status to active
+        target_status = 'active'
         profile = Profile.objects.filter(id=user_id).first()
         if profile:
             profile.role = role
@@ -574,7 +574,7 @@ class SignupView(APIView):
                     'email': email,
                     'companyName': company_name if role == 'brand' else None,
                     'role': role,
-                    'status': profile.status if profile else ('active' if role == 'brand' else 'unverified'),
+                    'status': profile.status if profile else 'active',
                 }
             }, status=status.HTTP_201_CREATED)
 

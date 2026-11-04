@@ -137,10 +137,6 @@ class LoginView(APIView):
         if profile.status in ['suspended', 'banned']:
             return Response({'message': f"Your account is {profile.status}", 'code': 'account_blocked'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Check mobile verification
-        if not profile.mobile_verified_at and profile.role != 'brand' and '@' not in identifier:
-            return Response({'message': 'Please verify your mobile number first', 'code': 'mobile_not_verified'}, status=status.HTTP_403_FORBIDDEN)
-
         session_data = auth_res.json()
         token = session_data.get('access_token')
         refresh_token = session_data.get('refresh_token')

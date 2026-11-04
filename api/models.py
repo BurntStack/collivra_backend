@@ -222,10 +222,10 @@ class CreatorProfiles(models.Model):
 
     # KYC & Verification
     pan_number = models.CharField(max_length=20, blank=True, null=True)
-    kyc_status = models.CharField(max_length=32, choices=KYC_STATUS_CHOICES, default='pending')
+    kyc_status = models.CharField(max_length=32, choices=KYC_STATUS_CHOICES, default='verified')
 
     # Marketplace Status
-    approval_status = models.CharField(max_length=32, choices=APPROVAL_STATUS_CHOICES, default='pending')
+    approval_status = models.CharField(max_length=32, choices=APPROVAL_STATUS_CHOICES, default='approved')
     visibility = models.JSONField(default=dict, blank=True)
     slug = models.TextField(unique=True, blank=True, null=True)
 
@@ -434,7 +434,7 @@ class Profiles(models.Model):
     locked_until = models.DateTimeField(blank=True, null=True)
     company_name = models.TextField(blank=True, null=True)
     is_profile_completed = models.BooleanField(default=False)
-    approval_status = models.CharField(max_length=32, default='pending')
+    approval_status = models.CharField(max_length=32, default='approved')
 
     class Meta:
         managed = False

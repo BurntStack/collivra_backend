@@ -119,7 +119,7 @@ class CreatorOnboardingView(APIView):
             social_links['tiktok'] = f"https://tiktok.com/@{tiktok_handle}"
 
         pan_number = validated.get('pan_number')
-        kyc_status = 'submitted' if pan_number else 'pending'
+        kyc_status = 'verified'
 
         now = django_tz.now()
 
@@ -143,7 +143,7 @@ class CreatorOnboardingView(APIView):
                 'social_links': social_links,
                 'pan_number': pan_number,
                 'kyc_status': kyc_status,
-                'approval_status': 'pending',
+                'approval_status': 'approved',
                 'updated_at': now,
             }
         )
@@ -153,8 +153,9 @@ class CreatorOnboardingView(APIView):
         if full_name:
             profile.name = full_name
         profile.role = 'creator'
+        profile.status = 'active'
         profile.is_profile_completed = True
-        profile.approval_status = 'pending'
+        profile.approval_status = 'approved'
         profile.updated_at = now
         profile.save()
 
@@ -163,7 +164,8 @@ class CreatorOnboardingView(APIView):
             supabase_auth.update_user_metadata(str(profile.id), {
                 'role': 'creator',
                 'name': profile.name,
-                'approval_status': 'pending',
+                'status': 'active',
+                'approval_status': 'approved',
                 'is_profile_completed': True,
             })
         except Exception:
@@ -171,7 +173,8 @@ class CreatorOnboardingView(APIView):
 
         return Response({
             'ok': True,
-            'message': 'Creator onboarding profile submitted for review.',
+            'message': 'Creator profile completed successfully.',
             'user': format_user_payload(profile),
             'creatorProfile': format_creator_profile(creator_profile),
         }, status=status.HTTP_200_OK)
+

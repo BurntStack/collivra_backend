@@ -126,17 +126,18 @@ def run_tests():
     creator_profile.refresh_from_db()
     assert creator_profile.is_profile_completed is True, "Profile is_profile_completed must be True"
     assert creator_profile.role == 'creator', "Profile role must be 'creator'"
-    assert creator_profile.approval_status == 'pending', "Profile approval_status must be 'pending'"
+    assert creator_profile.status == 'active', "Profile status must be 'active'"
+    assert creator_profile.approval_status == 'approved', "Profile approval_status must be 'approved'"
     assert creator_profile.name == 'Ananya Verma'
 
     cp = CreatorProfiles.objects.filter(user=creator_profile).first()
     assert cp is not None, "CreatorProfiles record must exist"
-    assert cp.approval_status == 'pending', "CreatorProfile approval_status must be 'pending'"
-    assert cp.kyc_status == 'submitted', "kyc_status should be 'submitted' with PAN"
+    assert cp.approval_status == 'approved', "CreatorProfile approval_status must be 'approved'"
+    assert cp.kyc_status == 'verified', "kyc_status should be 'verified'"
     assert cp.instagram_handle == 'ananya_looks', "Instagram handle should be stripped of leading @"
     assert cp.dob == date(2001, 5, 20)
     assert cp.pan_number == 'ABCDE1234F'
-    print(" Database state verified: is_profile_completed=True, approval_status='pending'.")
+    print(" Database state verified: is_profile_completed=True, status='active', approval_status='approved'.")
 
     # 6. Test GET Creator Onboarding
     print("\n--- 5. Testing GET Creator Onboarding ---")
@@ -187,6 +188,11 @@ def run_tests():
         raw_claims={'sub': str(admin_id), 'email': admin_email}
     )
     client.force_authenticate(user=admin_user)
+
+    # For queue endpoint testing, set one profile to pending
+    CreatorProfiles.objects.filter(user=creator_profile).update(approval_status='pending')
+    creator_profile.approval_status = 'pending'
+    creator_profile.save()
 
     # Superadmin GET queue
     res_queue = client.get('/api/v1/admin/creators/queue?status=pending')

@@ -19,3 +19,4 @@ ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'pending';
 
 GRANT ALL PRIVILEGES ON public.creator_profiles TO postgres, service_role, collivra_app;
 GRANT ALL PRIVILEGES ON public.profiles TO postgres, service_role, collivra_app;
+
