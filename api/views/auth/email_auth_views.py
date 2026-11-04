@@ -53,9 +53,20 @@ class RequestEmailOtpView(APIView):
                 'code': 'email_taken',
             }, status=status.HTTP_409_CONFLICT)
 
-        otp_code = generate_and_store_email_otp(email, role)
+        try:
+            otp_code = generate_and_store_email_otp(email, role)
+        except ValueError as e:
+            if str(e).startswith('cooldown:'):
+                seconds = str(e).split(':', 1)[1]
+                return Response({
+                    'error': {'code': 'rate_limited', 'message': f'Please wait {seconds} seconds before requesting a new OTP.'},
+                    'message': f'Please wait {seconds} seconds before requesting a new OTP.',
+                    'code': 'rate_limited',
+                    'resendInSeconds': int(seconds),
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            raise
 
-        resp = {'message': 'OTP sent successfully'}
+        resp = {'message': 'OTP sent successfully', 'resendInSeconds': 30}
         if getattr(settings, 'DEBUG', False) or getattr(settings, 'DEV_MODE', False) or email.endswith('.test'):
             resp['devOtp'] = otp_code
 
@@ -104,11 +115,11 @@ class VerifyAndRegisterView(APIView):
     def post(self, request):
         body = request.data or {}
         email = (body.get('email') or '').strip().lower()
-        otp = str(body.get('otp') or '').strip()
+        otp = str(body.get('otp') or body.get('code') or body.get('otp_code') or body.get('otpCode') or body.get('verificationCode') or body.get('verification_code') or '').strip()
         password = body.get('password') or ''
-        name = (body.get('name') or '').strip()
+        name = (body.get('name') or body.get('fullName') or body.get('full_name') or '').strip()
         role = (body.get('role') or 'brand').strip().lower()
-        company_name = (body.get('companyName') or '').strip()
+        company_name = (body.get('companyName') or body.get('company_name') or '').strip()
 
         fields = {}
         if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):

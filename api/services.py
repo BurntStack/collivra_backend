@@ -69,12 +69,28 @@ def generate_and_store_mobile_otp(mobile, purpose='login', role='creator'):
     """
     Generates a secure 6-digit OTP, stores it with 10-minute TTL in DB,
     hashes it securely, logs it to server, and attempts SMS delivery.
+    Returns the OTP code on success, or raises ValueError with seconds_remaining
+    if a resend cooldown (30s) is still active.
     """
     norm_mobile = normalize_mobile(mobile)
     if not norm_mobile:
         return None
 
     from .models import MobileVerificationOtp, OtpSendLog
+
+    OTP_COOLDOWN_SECONDS = 30
+
+    # Check 30-second resend cooldown
+    recent = MobileVerificationOtp.objects.filter(
+        mobile=norm_mobile,
+        consumed_at__isnull=True,
+    ).order_by('-created_at').first()
+    if recent:
+        elapsed = (django_tz.now() - recent.created_at).total_seconds()
+        if elapsed < OTP_COOLDOWN_SECONDS:
+            wait = int(OTP_COOLDOWN_SECONDS - elapsed) + 1
+            raise ValueError(f"cooldown:{wait}")
+
     otp_code = f"{secrets.randbelow(900000) + 100000:06d}"
     otp_hash = compute_mobile_otp_hash(norm_mobile, otp_code)
     expires_at = django_tz.now() + timedelta(minutes=10)
@@ -249,13 +265,30 @@ def generate_and_store_email_otp(email, role='brand'):
     """
     Generates a secure 6-digit OTP, stores it with a 10-minute expiration timestamp,
     hashes it securely, and triggers email delivery.
+    Returns the OTP code on success, or raises ValueError with seconds_remaining
+    if a resend cooldown (30s) is still active.
     """
     email = (email or '').strip().lower()
+
+    from .models import EmailVerificationOtp
+
+    OTP_COOLDOWN_SECONDS = 30
+
+    # Check 30-second resend cooldown
+    recent = EmailVerificationOtp.objects.filter(
+        email=email,
+        consumed_at__isnull=True,
+    ).order_by('-created_at').first()
+    if recent:
+        elapsed = (django_tz.now() - recent.created_at).total_seconds()
+        if elapsed < OTP_COOLDOWN_SECONDS:
+            wait = int(OTP_COOLDOWN_SECONDS - elapsed) + 1
+            raise ValueError(f"cooldown:{wait}")
+
     otp_code = f"{secrets.randbelow(900000) + 100000:06d}"
     otp_hash = compute_email_otp_hash(email, otp_code)
     expires_at = django_tz.now() + timedelta(minutes=10)
 
-    from .models import EmailVerificationOtp
     # Invalidate any previous unconsumed OTPs for this email
     EmailVerificationOtp.objects.filter(email=email, consumed_at__isnull=True).delete()
 
@@ -289,18 +322,23 @@ def verify_email_otp(email, otp_code):
         consumed_at__isnull=True
     ).order_by('-created_at').first()
 
+    print(f"\n[EMAIL OTP VERIFY] Attempt for {email} with code '{code}'")
     if not record:
-        return False, "Invalid or expired OTP"
+        print(f"[EMAIL OTP VERIFY FAILED] No unconsumed OTP record found for {email} in DB")
+        return False, "No active OTP found for this email. Please request a new code."
 
     if record.expires_at < django_tz.now():
-        return False, "OTP has expired"
+        print(f"[EMAIL OTP VERIFY FAILED] OTP expired at {record.expires_at} (current: {django_tz.now()})")
+        return False, "OTP has expired. Please request a new code."
 
     expected_hash = compute_email_otp_hash(email, code)
     if not hmac.compare_digest(record.otp_hash, expected_hash):
-        return False, "Invalid OTP code"
+        print(f"[EMAIL OTP VERIFY FAILED] Code mismatch for {email}. Expected hash {record.otp_hash[:10]}... got {expected_hash[:10]}...")
+        return False, "Incorrect OTP code. Please check and try again."
 
     record.consumed_at = django_tz.now()
     record.save(update_fields=['consumed_at'])
+    print(f"[EMAIL OTP VERIFY SUCCESS] OTP verified & consumed successfully for {email}\n")
     return True, None
 
 # Field encryption (AES-256-GCM or HMAC/base64 stub for mock/dev)

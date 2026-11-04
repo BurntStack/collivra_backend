@@ -47,7 +47,19 @@ class OtpSendView(APIView):
 
         purpose = (body.get('purpose') or 'login').strip().lower()
         role = (body.get('role') or 'creator').strip().lower()
-        otp_code = generate_and_store_mobile_otp(mobile, purpose=purpose, role=role)
+        try:
+            otp_code = generate_and_store_mobile_otp(mobile, purpose=purpose, role=role)
+        except ValueError as e:
+            if str(e).startswith('cooldown:'):
+                seconds = str(e).split(':', 1)[1]
+                return Response({
+                    'ok': False,
+                    'error': {'code': 'rate_limited', 'message': f'Please wait {seconds} seconds before requesting a new OTP.'},
+                    'message': f'Please wait {seconds} seconds before requesting a new OTP.',
+                    'code': 'rate_limited',
+                    'resendInSeconds': int(seconds),
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            raise
 
         resp = {
             'ok': True,
