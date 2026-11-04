@@ -746,9 +746,9 @@ class EmailOtpTestUIView(APIView):
         </div>
         <div class="form-group">
           <label>Account Role</label>
-          <select id="req-role">
-            <option value="brand">Brand (Active Immediately)</option>
-            <option value="creator">Creator (Requires Approval)</option>
+          <select id="req-role" onchange="onRoleChange()">
+            <option value="brand">Brand</option>
+            <option value="creator">Creator</option>
           </select>
         </div>
         <button class="btn" onclick="requestOtp()">Send 6-Digit Email OTP</button>
@@ -778,7 +778,7 @@ class EmailOtpTestUIView(APIView):
           <label>Password (Min 8 Characters)</label>
           <input type="password" id="reg-password" placeholder="Password" value="MyStrongPassword123!">
         </div>
-        <div class="form-group" id="company-group">
+        <div class="form-group" id="company-group" style="display:none;">
           <label>Company Name (for Brands)</label>
           <input type="text" id="reg-company" placeholder="Company Name" value="Acme Inc">
         </div>
@@ -818,6 +818,14 @@ class EmailOtpTestUIView(APIView):
         document.getElementById('tab-email').classList.add('active');
       }
     }
+
+    function onRoleChange() {
+      const role = document.getElementById('req-role').value;
+      const companyGroup = document.getElementById('company-group');
+      companyGroup.style.display = role === 'brand' ? 'block' : 'none';
+    }
+    // Run once on load to set initial state
+    onRoleChange();
 
     async function requestMobileOtp() {
       const mobile = document.getElementById('mobile-number').value.trim();
